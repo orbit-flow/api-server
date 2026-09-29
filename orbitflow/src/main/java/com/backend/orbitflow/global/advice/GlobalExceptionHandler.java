@@ -1,8 +1,9 @@
 package com.backend.orbitflow.global.advice;
 
-import com.backend.orbitflow.global.dto.response.CommonResponse;
-import com.backend.orbitflow.global.error.ErrorCode;
-import com.backend.orbitflow.global.error.exception.GlobalException;
+import com.backend.orbitflow.global.common.dto.response.CommonResponse;
+import com.backend.orbitflow.global.common.error.ErrorCode;
+import com.backend.orbitflow.global.common.error.exception.CommonException;
+
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -13,9 +14,9 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
-    @ExceptionHandler(GlobalException.class)
+    @ExceptionHandler(CommonException.class)
     public ResponseEntity<CommonResponse<Object>> handleGlobalException(
-            GlobalException e,
+            CommonException e,
             HttpServletRequest request
     ) {
         ErrorCode errorCode = e.getErrorCode();

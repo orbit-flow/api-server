@@ -4,6 +4,8 @@ import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 
+import com.backend.orbitflow.global.common.error.ErrorCode;
+
 @Getter
 @RequiredArgsConstructor
 public enum GlobalErrorCode implements ErrorCode{

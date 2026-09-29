@@ -1,7 +1,8 @@
 package com.backend.orbitflow.global.util;
 
+import com.backend.orbitflow.global.common.error.exception.CommonException;
 import com.backend.orbitflow.global.error.GlobalErrorCode;
-import com.backend.orbitflow.global.error.exception.GlobalException;
+
 import jakarta.mail.internet.MimeMessage;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -36,7 +37,7 @@ public class EmailService {
             emailSender.send(message);
 
         } catch (Exception e) {
-            throw new GlobalException(GlobalErrorCode.MAIL_SEND_ERROR);
+            throw new CommonException(GlobalErrorCode.MAIL_SEND_ERROR);
         }
     }
 
