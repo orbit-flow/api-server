@@ -33,7 +33,15 @@ public enum GlobalErrorCode implements ErrorCode{
     INVALID_FILE_URL(HttpStatus.BAD_REQUEST,
             "잘못된 파일 주소 형식입니다.",
             "https://orbitflow.com/errors/invalid-file-url",
-            "Invalid File URL");
+            "Invalid File URL"),
+    EXPIRED_TOKEN(HttpStatus.UNAUTHORIZED,
+           "로그인 정보가 만료되었습니다.",
+           "https://orbitflow.com/errors/expired-Token",
+           "Expired Token"),
+    INVALID_TOKEN(HttpStatus.BAD_REQUEST,
+                "잘못된 로그인 정보입니다.",
+                "https://orbitflow.com/errorsinvalid-token",
+                "Invalid Token");
     
     private final HttpStatus httpStatus;
     private final String message;
