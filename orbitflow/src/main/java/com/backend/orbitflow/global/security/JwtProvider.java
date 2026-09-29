@@ -15,6 +15,8 @@ import io.jsonwebtoken.security.Keys;
 import jakarta.annotation.PostConstruct;
 import jakarta.servlet.http.HttpServletRequest;
 
+import com.backend.orbitflow.domain.user.enums.UserRole;;
+
 @Component 
 public class JwtProvider {
 
@@ -68,7 +70,7 @@ public class JwtProvider {
         return null;
     }
 
-    public Claims getuserInfoFromToken(String token) {
+    public Claims getUserInfoFromToken(String token) {
         return Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload();
     }
 }
