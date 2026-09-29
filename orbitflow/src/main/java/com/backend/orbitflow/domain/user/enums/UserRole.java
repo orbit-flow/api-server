@@ -1,0 +1,31 @@
+package com.backend.orbitflow.domain.user.enums;
+
+import java.util.Arrays;
+
+import com.backend.orbitflow.domain.user.error.UserErrorCode;
+import com.backend.orbitflow.global.common.error.exception.CommonException;
+
+import lombok.Getter;
+import lombok.RequiredArgsConstructor;
+
+@Getter 
+@RequiredArgsConstructor 
+public enum UserRole {
+
+    ROLE_USER(Authority.USER),
+    ROLE_ADMIN(Authority.ADMIN);
+
+    private final String userRole;
+
+    public static UserRole of(String role) {
+        return Arrays.stream(UserRole.values())
+            .filter(r -> r.name().equalsIgnoreCase(role))
+            .findFirst()
+            .orElseThrow(() -> new CommonException(UserErrorCode.BAD_USER_ROLE));
+    }
+
+    public static class Authority {
+        public static final String USER = "ROLE_USER";
+        public static final String ADMIN = "ROLE_ADMIN";
+    }
+}
