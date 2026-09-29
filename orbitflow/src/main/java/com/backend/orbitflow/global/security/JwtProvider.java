@@ -42,7 +42,7 @@ public class JwtProvider {
 
         Date date = new Date();
         
-        Jwts.builder()
+        return Jwts.builder()
                 .subject(uuid)
                 .claim("email", email)
                 .claim(AUTHORIZATION_KEY, role)

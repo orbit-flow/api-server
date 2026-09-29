@@ -22,6 +22,6 @@ public class AuthUser {
     }
 
     public Collection<? extends GrantedAuthority> getAuthorities() {
-        return Collections.singletonList(new SimpleGrantedAuthority(role.name));
+        return Collections.singletonList(new SimpleGrantedAuthority(role.name()));
     }
 }

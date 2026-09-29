@@ -18,7 +18,6 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
-import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 
 @Configuration 
@@ -54,7 +53,7 @@ public class SecurityConfig {
 
                 .requestMatchers(HttpMethod.POST, "/api/users").permitAll()
 
-                .requestMatchers("/", "/*.html", "/css/**", "/js/**").permitAll();
+                .requestMatchers("/", "/*.html", "/css/**", "/js/**").permitAll()
 
                 .requestMatchers("/api/**").authenticated()
         );

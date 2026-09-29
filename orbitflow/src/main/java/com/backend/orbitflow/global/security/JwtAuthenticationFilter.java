@@ -2,7 +2,6 @@ package com.backend.orbitflow.global.security;
 
 import java.io.IOException;
 
-import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.Authentication;
