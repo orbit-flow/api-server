@@ -1,7 +1,6 @@
-package com.backend.orbitflow.global.dto.response;
+package com.backend.orbitflow.global.common.dto.response;
 
-import com.backend.orbitflow.global.error.ErrorCode;
-import com.backend.orbitflow.global.error.ErrorResponse;
+import com.backend.orbitflow.global.common.error.ErrorCode;
 
 import java.time.Instant;
 
@@ -9,13 +8,13 @@ public record CommonResponse<T>(
         boolean success,
         int status,
         T data,
-        ErrorResponse error,
+        Error error,
         String message,
         Meta meta
 ) {
 
     public static <T> CommonResponse<T> success(
-            ResponseCode responseCode,
+            SuccessCode responseCode,
             T data
     ) {
         return new CommonResponse<>(
@@ -29,7 +28,7 @@ public record CommonResponse<T>(
     }
 
     public static <T> CommonResponse<T> success(
-            ResponseCode responseCode
+            SuccessCode responseCode
     ) {
         return CommonResponse.success(
                 responseCode,
@@ -46,7 +45,7 @@ public record CommonResponse<T>(
                 false,
                 errorCode.getHttpStatus().value(),
                 data,
-                ErrorResponse.of(
+                Error.of(
                         errorCode.getType(),
                         errorCode.getTitle(),
                         instance
@@ -62,11 +61,18 @@ public record CommonResponse<T>(
             String version
     ) {
         public static Meta of(String traceId, String version) {
-            return new Meta(
-                    Instant.now(),
-                    traceId,
-                    version
+            return new Meta(Instant.now(), traceId, version
             );
+        }
+    }
+
+    public record Error(
+        String title,
+        String type,
+        String instance
+    ) {
+        public static Error of(String title, String type, String instance) {
+                return new Error(title, type, instance);
         }
     }
 }

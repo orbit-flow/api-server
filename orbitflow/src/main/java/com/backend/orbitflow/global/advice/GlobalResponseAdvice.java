@@ -1,6 +1,5 @@
 package com.backend.orbitflow.global.advice;
 
-import com.backend.orbitflow.global.dto.response.CommonResponse;
 import io.micrometer.tracing.Span;
 import io.micrometer.tracing.TraceContext;
 import io.micrometer.tracing.Tracer;
@@ -16,6 +15,8 @@ import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.servlet.mvc.method.annotation.ResponseBodyAdvice;
+
+import com.backend.orbitflow.global.common.dto.response.CommonResponse;
 
 import java.time.Instant;
 import java.util.Optional;

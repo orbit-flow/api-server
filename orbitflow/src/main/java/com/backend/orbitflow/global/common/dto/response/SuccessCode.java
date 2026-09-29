@@ -1,8 +1,8 @@
-package com.backend.orbitflow.global.dto.response;
+package com.backend.orbitflow.global.common.dto.response;
 
 import org.springframework.http.HttpStatus;
 
-public interface ResponseCode {
+public interface SuccessCode {
 
     HttpStatus getHttpStatus();
     String getMessage();

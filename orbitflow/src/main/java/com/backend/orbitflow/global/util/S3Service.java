@@ -15,8 +15,8 @@ import com.amazonaws.services.s3.AmazonS3Client;
 import com.amazonaws.services.s3.model.CannedAccessControlList;
 import com.amazonaws.services.s3.model.ObjectMetadata;
 import com.amazonaws.services.s3.model.PutObjectRequest;
+import com.backend.orbitflow.global.common.error.exception.CommonException;
 import com.backend.orbitflow.global.error.GlobalErrorCode;
-import com.backend.orbitflow.global.error.exception.GlobalException;
 
 import lombok.RequiredArgsConstructor;
 
@@ -47,7 +47,7 @@ public class S3Service {
 
             return amazonS3Client.getUrl(bucket, fileUrl).toString();
         } catch (IOException e) {
-            throw new GlobalException(GlobalErrorCode.FILE_UPLOAD_ERROR);
+            throw new CommonException(GlobalErrorCode.FILE_UPLOAD_ERROR);
         }
     }
 
@@ -56,11 +56,11 @@ public class S3Service {
         String contentType = file.getContentType();
         
         if (contentType == null || !contentType.startsWith("image/")) {
-            throw new GlobalException(GlobalErrorCode.INVALID_FILE_TYPE);
+            throw new CommonException(GlobalErrorCode.INVALID_FILE_TYPE);
         }
 
         if (file.getSize() > 10 * 1024 * 1024) {
-            throw new GlobalException(GlobalErrorCode.FILE_SIZE_EXCEED);
+            throw new CommonException(GlobalErrorCode.FILE_SIZE_EXCEED);
         }
     }
 
@@ -89,10 +89,10 @@ public class S3Service {
         try {
             String key = extractKeyFromUrl(fileUrl);
             amazonS3Client.deleteObject(bucket, key);
-        } catch (GlobalException e) {
+        } catch (CommonException e) {
             throw e;
         } catch (Exception e) {
-            throw new GlobalException(GlobalErrorCode.FAILED_DELETE_IMAGE);
+            throw new CommonException(GlobalErrorCode.FAILED_DELETE_IMAGE);
         }
     }
 
@@ -105,7 +105,7 @@ public class S3Service {
             }
             return path;
         } catch (IllegalArgumentException | java.net.MalformedURLException e) {
-            throw new GlobalException(GlobalErrorCode.INVALID_FILE_URL);
+            throw new CommonException(GlobalErrorCode.INVALID_FILE_URL);
         }
     }
 
