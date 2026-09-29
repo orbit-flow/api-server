@@ -1,0 +1,34 @@
+package com.backend.orbitflow.global.util;
+
+import lombok.RequiredArgsConstructor;
+import org.springframework.data.redis.core.RedisTemplate;
+import org.springframework.stereotype.Component;
+
+import java.time.Duration;
+import java.util.Optional;
+
+@Component
+@RequiredArgsConstructor
+public class RedisService {
+
+    private final RedisTemplate<String, Object> redisTemplate;
+
+    // 데이터 저장 (TTL 설정 포함)
+    public void valuesSet(String key, Object value, Duration timeout) {
+        redisTemplate.opsForValue().set(key, value, timeout);
+    }
+
+    // 데이터 조회
+    public <T> Optional<T> valuesGet(String key, Class<T> clazz) {
+        Object value = redisTemplate.opsForValue().get(key);
+        if (value == null) {
+            return Optional.empty();
+        }
+        return Optional.of(clazz.cast(value));
+    }
+
+    // 데이터 삭제
+    public boolean deleteValues(String key) {
+        return Boolean.TRUE.equals(redisTemplate.delete(key));
+    }
+}
