@@ -3,6 +3,11 @@ package com.backend.orbitflow.domain.user.controller;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.backend.orbitflow.domain.user.dto.request.UserEmailUpdateRequest;
+import com.backend.orbitflow.domain.user.dto.request.UserPasswordUpdateRequest;
+import com.backend.orbitflow.domain.user.dto.request.UserProfileUpdateRequest;
+import com.backend.orbitflow.domain.user.dto.request.UserSignupRequest;
+import com.backend.orbitflow.domain.user.dto.response.UserResponse;
 import com.backend.orbitflow.domain.user.dto.response.UserSuccessCode;
 import com.backend.orbitflow.domain.user.facade.UserFacade;
 import com.backend.orbitflow.global.common.dto.response.CommonResponse;
@@ -17,11 +22,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.PutMapping;
-import org.springframework.web.bind.annotation.PathVariable;
-
-
 
 
 @RestController
@@ -44,47 +45,65 @@ public class UserController {
     }
     
     @GetMapping("/me")
-    public ResponseEntity<CommonResponse<UserResponse>> getOwnUser(
+    public ResponseEntity<CommonResponse<UserResponse>> getUser(
         @AuthenticationPrincipal AuthUser authUser
     ) {
         return ResponseEntity
             .status(HttpStatus.OK)
             .body(CommonResponse.success(
                 UserSuccessCode.GET_USER_INFO,
-                userFacade.getOwnUser(authUser)
+                userFacade.getUser(authUser)
             ));
     }
 
-    @PutMapping("me/updateProfile")
-    public String putMethodName(@PathVariable String id, @RequestBody String entity) {
-        //TODO: process PUT request
-        
-        return entity;
+    @PutMapping("me/profile")
+    public ResponseEntity<CommonResponse<UserResponse>> updateProfile(
+        @AuthenticationPrincipal AuthUser authUser,
+        @Valid @RequestBody UserProfileUpdateRequest request
+    ) {
+        return ResponseEntity
+            .status(HttpStatus.OK)
+            .body(CommonResponse.success(
+                UserSuccessCode.USER_PROFILE_UPDATE,
+                userFacade.updateProfile(authUser, request)
+            ));
     }
 
     @PutMapping("/me/email")
-    public String putMethodName(@PathVariable String id, @RequestBody String entity) {
-        //TODO: process PUT request
-        
-        return entity;
+    public ResponseEntity<CommonResponse<UserResponse>> updateEmail(
+        @AuthenticationPrincipal AuthUser authUser,
+        @Valid @RequestBody UserEmailUpdateRequest request
+    ) {
+        return ResponseEntity
+            .status(HttpStatus.OK)
+            .body(CommonResponse.success(
+                UserSuccessCode.USER_EMAIL_UPDATE,
+                userFacade.updateEmail(authUser, request)
+            ));
     }
     
-    @PutMapping("path/{id}")
-    public String putMethodName(@PathVariable String id, @RequestBody String entity) {
-        //TODO: process PUT request
-        
-        return entity;
-    }
-
-    @PutMapping("path/{id}")
-    public String putMethodName(@PathVariable String id, @RequestBody String entity) {
-        //TODO: process PUT request
-        
-        return entity;
+    @PutMapping("/me/password")
+    public ResponseEntity<CommonResponse<UserResponse>> updatePassword(
+        @AuthenticationPrincipal AuthUser authUser,
+        @Valid @RequestBody UserPasswordUpdateRequest request
+    ) {
+        return ResponseEntity
+            .status(HttpStatus.OK)
+            .body(CommonResponse.success(
+                UserSuccessCode.USER_PASSWORD_UPDATE,
+                userFacade.updatePassword(authUser, request)
+            ));
     }
 
     @DeleteMapping("/me")
-    public String deleteMethodName() {
-        
+    public ResponseEntity<CommonResponse<Void>> deleteUser(
+        @AuthenticationPrincipal AuthUser authUser
+    ) {
+        userFacade.deleteUser(authUser);
+        return ResponseEntity
+            .status(HttpStatus.NO_CONTENT)
+            .body(CommonResponse.success(
+                UserSuccessCode.USER_DELETE
+            ));
     }
 }
