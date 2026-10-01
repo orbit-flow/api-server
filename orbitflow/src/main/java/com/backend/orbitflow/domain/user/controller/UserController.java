@@ -1,12 +1,9 @@
 package com.backend.orbitflow.domain.user.controller;
 
+import com.backend.orbitflow.domain.user.dto.request.*;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-import com.backend.orbitflow.domain.user.dto.request.UserEmailUpdateRequest;
-import com.backend.orbitflow.domain.user.dto.request.UserPasswordUpdateRequest;
-import com.backend.orbitflow.domain.user.dto.request.UserProfileUpdateRequest;
-import com.backend.orbitflow.domain.user.dto.request.UserSignupRequest;
 import com.backend.orbitflow.domain.user.dto.response.UserResponse;
 import com.backend.orbitflow.domain.user.dto.response.UserSuccessCode;
 import com.backend.orbitflow.domain.user.facade.UserFacade;
@@ -97,9 +94,10 @@ public class UserController {
 
     @DeleteMapping("/me")
     public ResponseEntity<CommonResponse<Void>> deleteUser(
-        @AuthenticationPrincipal AuthUser authUser
+        @AuthenticationPrincipal AuthUser authUser,
+        @Valid @RequestBody UserDeleteRequest request
     ) {
-        userFacade.deleteUser(authUser);
+        userFacade.deleteUser(authUser, request);
         return ResponseEntity
             .status(HttpStatus.NO_CONTENT)
             .body(CommonResponse.success(
