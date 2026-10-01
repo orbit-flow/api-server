@@ -68,4 +68,8 @@ public class User extends SoftDeleteEntity{
     public void updateUserState(UserState state) {
         this.state = state;
     }
+
+    public void updatePassword(String password) {
+        this.password = password;
+    }
 }
