@@ -54,10 +54,11 @@ public class User extends SoftDeleteEntity{
         );
     }
 
-    public void updateUserInfo(String name, String introduce, String profileImage) {
+    public void updateUserInfo(String name, String introduce, String profileImage, boolean isPrivate) {
         this.name = name;
         this.introduce = introduce;
         this.profileImage = profileImage;
+        this.isPrivate = isPrivate;
     }
 
     public void updateEmail(String email) {
@@ -66,5 +67,9 @@ public class User extends SoftDeleteEntity{
 
     public void updateUserState(UserState state) {
         this.state = state;
+    }
+
+    public void updatePassword(String password) {
+        this.password = password;
     }
 }
