@@ -11,7 +11,7 @@ public record UserProfileUpdateRequest(
     @Size(max = 100, message = "자기소개는 100자 이내여야 합니다.")
     String introduce,
 
-    String frofileImage,
+    String profileImage,
     
     boolean isPrivate
 ) {
