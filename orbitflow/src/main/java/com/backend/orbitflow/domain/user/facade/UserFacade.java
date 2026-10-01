@@ -1,44 +1,58 @@
 package com.backend.orbitflow.domain.user.facade;
 
+import com.backend.orbitflow.domain.auth.service.AuthService;
+import com.backend.orbitflow.domain.user.dto.request.*;
+import com.backend.orbitflow.domain.user.entity.User;
 import org.springframework.stereotype.Component;
 
 import lombok.RequiredArgsConstructor;
 
-import com.backend.orbitflow.domain.user.dto.request.UserEmailUpdateRequest;
-import com.backend.orbitflow.domain.user.dto.request.UserPasswordUpdateRequest;
-import com.backend.orbitflow.domain.user.dto.request.UserProfileUpdateRequest;
-import com.backend.orbitflow.domain.user.dto.request.UserSignupRequest;
 import com.backend.orbitflow.domain.user.dto.response.UserResponse;
 import com.backend.orbitflow.domain.user.service.UserService;
 import com.backend.orbitflow.global.security.AuthUser;
+import org.springframework.transaction.annotation.Transactional;
 
 @Component
 @RequiredArgsConstructor
 public class UserFacade {
 
     private final UserService userService;
+    private final AuthService authService;
 
     public UserResponse signup(UserSignupRequest request) {
-        return null;
+        String encodedPassword = authService.encodePassword(request.password());
+        User user = userService.register(request.email(), encodedPassword, request.name());
+        return UserResponse.from(user);
     }
 
     public UserResponse getUser(AuthUser authUser) {
-        return UserResponse.of(userService.getUserByUuid(authUser.getUuid()));
+        return UserResponse.from(userService.getByUuid(authUser.getUuid()));
     }
 
     public UserResponse updateProfile(AuthUser authUser, UserProfileUpdateRequest request) {
-        return null;
+        return UserResponse.from(userService.updateProfile(
+                authUser.getUuid(), request.name(), request.profileImage(), request.introduce(), request.isPrivate()
+        ));
     }
 
     public UserResponse updateEmail(AuthUser authUser, UserEmailUpdateRequest request) {
-        return null;
+        return UserResponse.from(userService.updateEmail(
+                authUser.getUuid(), request.email()
+        ));
     }
 
+    @Transactional
     public UserResponse updatePassword(AuthUser authUser, UserPasswordUpdateRequest request) {
-        return null;
+        User user = userService.getByUuid(authUser.getUuid());
+        authService.verifyPassword(request.password(), user.getPassword());
+        return UserResponse.from(
+                userService.updatePassword(
+                        authUser.getUuid(),
+                        authService.encodePassword(request.newPassword())
+                ));
     }
 
-    public Void deleteUser(AuthUser authUser) {
-        return null;
+    public void deleteUser(AuthUser authUser, UserDeleteRequest request) {
+        userService.deleteUser(authUser.getUuid(), request.confirmName());
     }
 }
