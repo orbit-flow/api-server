@@ -9,17 +9,17 @@ import java.util.Optional;
 
 @Component
 @RequiredArgsConstructor
-public class RedisService {
+public class RedisUtil {
 
     private final RedisTemplate<String, Object> redisTemplate;
 
     // 데이터 저장 (TTL 설정 포함)
-    public void valuesSet(String key, Object value, Duration timeout) {
+    public void setValues(String key, Object value, Duration timeout) {
         redisTemplate.opsForValue().set(key, value, timeout);
     }
 
     // 데이터 조회
-    public <T> Optional<T> valuesGet(String key, Class<T> clazz) {
+    public <T> Optional<T> getValues(String key, Class<T> clazz) {
         Object value = redisTemplate.opsForValue().get(key);
         if (value == null) {
             return Optional.empty();

@@ -2,6 +2,9 @@ package com.backend.orbitflow.global.security;
 
 import java.util.List;
 
+import com.backend.orbitflow.domain.auth.advice.OAuth2SuccessHandler;
+import com.backend.orbitflow.domain.auth.facade.AuthFacade;
+import com.backend.orbitflow.domain.auth.facade.OAuthFacade;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -27,6 +30,8 @@ import lombok.RequiredArgsConstructor;
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final OAuthFacade oAuthFacade;
+    private final OAuth2SuccessHandler oAuth2SuccessHandler;
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -45,17 +50,19 @@ public class SecurityConfig {
         );
 
         http.authorizeHttpRequests(auth -> auth
-                .requestMatchers("/ws/**").permitAll()
-
                 .requestMatchers("/swagger-ui.html", "/swagger-ui/**", "/errors/**",
-                        "/api/auth/**"
+                        "/api/auth/**", "/oauth2/**"
                 ).permitAll()
-
                 .requestMatchers(HttpMethod.POST, "/api/users").permitAll()
-
                 .requestMatchers("/", "/*.html", "/css/**", "/js/**").permitAll()
 
                 .requestMatchers("/api/**").authenticated()
+        );
+
+        http.oauth2Login(oauth2 -> oauth2
+                .userInfoEndpoint(userInfo ->
+                        userInfo.userService(oAuthFacade)
+                ).successHandler(oAuth2SuccessHandler)
         );
 
         http.formLogin(AbstractHttpConfigurer::disable);

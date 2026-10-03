@@ -3,6 +3,7 @@ package com.backend.orbitflow.global.util;
 import com.backend.orbitflow.global.common.error.exception.CommonException;
 import com.backend.orbitflow.global.error.GlobalErrorCode;
 
+
 import jakarta.mail.internet.MimeMessage;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
@@ -54,5 +55,22 @@ public class EmailService {
         message.setText(text);
 
         return message;
+    }
+
+    public void sendCodeByEmail(String email, String code) {
+        String title = "OrbitFlow 이메일 인증 번호";
+        String content = "<html>"
+                + "<body>"
+                + "<h1>OrbitFlow 인증 코드 : " + code + "</h1>"
+                + "<p>해당 코드를 홈페이지에 입력하세요.</p>"
+                + "<footer style = 'color: grey; font-size: small;'>"
+                + "<p>이 메일은 자동응답 메일입니다. 회신하지 마시기 바랍니다.</p>"
+                + "</footer> </body> </html>";
+        try {
+            sendEmail(email, title, content);
+        } catch (RuntimeException e) {
+            throw new CommonException(GlobalErrorCode.MAIL_SEND_ERROR);
+        }
+
     }
 }
