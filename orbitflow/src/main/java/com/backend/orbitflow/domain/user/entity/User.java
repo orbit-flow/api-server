@@ -54,6 +54,14 @@ public class User extends SoftDeleteEntity{
         );
     }
 
+    public static User social(
+            String uuid, String email, String name, String profileImage
+    ) {
+        return new User (
+                null, uuid, email, null, name, null, profileImage, UserRole.ROLE_USER, UserState.ACTIVE, false
+        );
+    }
+
     public void updateUserInfo(String name, String introduce, String profileImage, boolean isPrivate) {
         this.name = name;
         this.introduce = introduce;
