@@ -14,7 +14,6 @@ import org.springframework.web.filter.OncePerRequestFilter;
 import com.backend.orbitflow.global.common.dto.response.CommonResponse;
 import com.backend.orbitflow.global.common.error.ErrorCode;
 import com.backend.orbitflow.global.error.GlobalErrorCode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.ExpiredJwtException;
@@ -28,6 +27,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
 import com.backend.orbitflow.domain.user.enums.UserRole;
+import tools.jackson.databind.ObjectMapper;
 
 @Slf4j 
 @Component 
@@ -55,7 +55,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter{
 
             try {
                 Claims info = jwtProvider.getUserInfoFromToken(tokenValue);
-                setAuthntication(info);
+                setAuthentication(info);
             } catch (SecurityException | MalformedJwtException e) {
                 log.error("유효하지 않은 JWT 서명입니다.", e);
                 sendErrorResponse(request, response, GlobalErrorCode.INVALID_TOKEN);
@@ -79,11 +79,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter{
     }
 
 
-    private void setAuthntication(Claims claims) {
+    private void setAuthentication(Claims claims) {
         SecurityContext context = SecurityContextHolder.createEmptyContext();
         String uuid = claims.getSubject();
         String email = claims.get("email", String.class);
-        UserRole role = UserRole.valueOf(claims.get(jwtProvider.AUTHORIZATION_KEY, String.class));
+        UserRole role = UserRole.valueOf(claims.get(JwtProvider.AUTHORIZATION_KEY, String.class));
 
         AuthUser authUser = new AuthUser(uuid, email, role);
         Authentication authentication = new JwtAuthenticationToken(authUser);
