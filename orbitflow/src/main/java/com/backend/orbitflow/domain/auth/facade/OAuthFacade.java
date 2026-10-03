@@ -1,0 +1,63 @@
+package com.backend.orbitflow.domain.auth.facade;
+
+import com.backend.orbitflow.domain.auth.error.AuthErrorCode;
+import com.backend.orbitflow.domain.user.entity.User;
+import com.backend.orbitflow.domain.user.enums.UserRole;
+import com.backend.orbitflow.domain.user.oauth.*;
+import com.backend.orbitflow.domain.user.service.OAuthService;
+import com.backend.orbitflow.domain.user.service.UserService;
+import com.backend.orbitflow.global.common.error.exception.CommonException;
+import lombok.RequiredArgsConstructor;
+import org.jspecify.annotations.NullMarked;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.client.userinfo.DefaultOAuth2UserService;
+import org.springframework.security.oauth2.client.userinfo.OAuth2UserRequest;
+import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
+import org.springframework.security.oauth2.core.user.DefaultOAuth2User;
+import org.springframework.security.oauth2.core.user.OAuth2User;
+import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+
+@Component
+@RequiredArgsConstructor
+@Transactional
+public class OAuthFacade extends DefaultOAuth2UserService {
+
+    private final OAuthService oAuthService;
+    private final UserService userService;
+
+    @Override
+    @NullMarked
+    public OAuth2User loadUser(OAuth2UserRequest userRequest)
+            throws OAuth2AuthenticationException
+    {
+        OAuth2User oauth2User = super.loadUser(userRequest);
+        String registrationId = userRequest.getClientRegistration().getRegistrationId();
+        OAuth2UserInfo oAuth2UserInfo = switch (registrationId) {
+            case "google" -> new GoogleUserInfo(oauth2User.getAttributes());
+            case "naver" -> new NaverUserInfo(oauth2User.getAttribute("response"));
+            case "kakao" -> new KakaoUserInfo(oauth2User.getAttributes(), oauth2User.getAttribute("kakao_account"));
+            case "github" -> new GithubUserInfo(oauth2User.getAttributes());
+            case "apple" -> new AppleUserInfo(oauth2User.getAttributes(), oauth2User.getAttribute("name"));
+            default -> throw new CommonException(AuthErrorCode.UNSUPPORTED_OAUTH_PROVIDER);
+        };
+
+        Optional<User> user = oAuthService.findUser(oAuth2UserInfo.getProvider(), oAuth2UserInfo.getProviderId());
+        User oAuthUser = user.orElseGet( () ->
+                userService.registerSocialUser(oAuth2UserInfo.getName(), oAuth2UserInfo.getEmail(), oAuth2UserInfo.getProfileUrl())
+        );
+
+        if (user.isEmpty()) oAuthService.link(oAuthUser, oAuth2UserInfo.getProvider(), oAuth2UserInfo.getProviderId());
+
+        Map<String, Object> attributes = Map.of("uuid", oAuthUser.getUuid());
+        return new DefaultOAuth2User(
+                List.of(new SimpleGrantedAuthority(UserRole.ROLE_USER.toString())),
+                attributes,
+                "uuid"
+        );
+    }
+}

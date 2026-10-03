@@ -26,7 +26,11 @@ public enum UserErrorCode implements ErrorCode{
     WRONG_USER_NAME(HttpStatus.BAD_REQUEST,
             "잘못된 사용자 이름입니다.",
             "https://orbitflow.com/errors/wrong-user-name",
-            "Wrong User Name");
+            "Wrong User Name"),
+    UN_VARIFIED_EMAIL(HttpStatus.BAD_REQUEST,
+            "인증되지 않은 이메일 주소입니다.",
+            "https://orbitflow.com/errors/un-varified-email",
+            "Un Varified Email");
 
     private final HttpStatus httpStatus;
     private final String message;

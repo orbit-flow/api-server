@@ -19,6 +19,9 @@ public record UserSignupRequest(
 
     @NotBlank(message = "사용자 이름은 비어있을 수 없습니다.")
     @Size(min = 2, max = 50, message = "사용자 이름은 2~50글자여야 합니다.")
-    String name
+    String name,
+
+    @NotBlank(message = "이메일 인증 토큰을 입력해 주세요.")
+    String emailVarifyToken
 ) {
 }

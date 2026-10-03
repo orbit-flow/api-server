@@ -4,6 +4,7 @@ import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.domain.user.enums.UserRole;
 import com.backend.orbitflow.domain.user.error.UserErrorCode;
 import com.backend.orbitflow.global.common.error.exception.CommonException;
+import com.backend.orbitflow.global.util.RedisUtil;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -19,6 +20,7 @@ import java.util.UUID;
 public class UserServiceImpl implements UserService{
 
     private final UserRepository userRepository;
+    private final RedisUtil redisUtil;
 
     @Transactional(readOnly = true)
     public User getByUuid(String uuid) {
@@ -34,9 +36,15 @@ public class UserServiceImpl implements UserService{
         );
     }
 
-    public User register(String email, String password, String name) {
+    public User register(String email, String password, String name, String varifyToken) {
         if (userRepository.findByEmail(email).isPresent()) {
             throw new CommonException(UserErrorCode.EMAIL_DUPLICATE);
+        }
+        String code = redisUtil.getValues(email, String.class).orElseThrow(
+                () -> new CommonException(UserErrorCode.UN_VARIFIED_EMAIL)
+        );
+        if (!code.equals(varifyToken)) {
+            throw new CommonException(UserErrorCode.UN_VARIFIED_EMAIL);
         }
         User user = User.of(
                 UUID.randomUUID().toString().replace("-", ""),
@@ -44,6 +52,19 @@ public class UserServiceImpl implements UserService{
                 password,
                 name,
                 UserRole.ROLE_USER
+        );
+        return userRepository.save(user);
+    }
+
+    public User registerSocialUser(String email, String name, String profileImage) {
+        if (userRepository.findByEmail(email).isPresent()) {
+            throw new CommonException(UserErrorCode.EMAIL_DUPLICATE);
+        }
+        User user = User.social(
+                UUID.randomUUID().toString().replace("-", ""),
+                email,
+                name,
+                profileImage
         );
         return userRepository.save(user);
     }

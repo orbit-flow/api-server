@@ -21,8 +21,7 @@ public class UserFacade {
 
     public UserResponse signup(UserSignupRequest request) {
         String encodedPassword = authService.encodePassword(request.password());
-        User user = userService.register(request.email(), encodedPassword, request.name());
-        return UserResponse.from(user);
+        return UserResponse.from(userService.register(request.email(), encodedPassword, request.name(), request.emailVarifyToken()));
     }
 
     public UserResponse getUser(AuthUser authUser) {
