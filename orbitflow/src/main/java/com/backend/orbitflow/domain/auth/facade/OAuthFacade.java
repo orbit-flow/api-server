@@ -42,16 +42,16 @@ public class OAuthFacade extends DefaultOAuth2UserService {
             case "naver" -> new NaverUserInfo(oauth2User.getAttribute("response"));
             case "kakao" -> new KakaoUserInfo(oauth2User.getAttributes(), oauth2User.getAttribute("kakao_account"));
             case "github" -> new GithubUserInfo(oauth2User.getAttributes());
-            case "apple" -> new AppleUserInfo(oauth2User.getAttributes(), oauth2User.getAttribute("name"));
             default -> throw new CommonException(AuthErrorCode.UNSUPPORTED_OAUTH_PROVIDER);
         };
 
         Optional<User> user = oAuthService.findUser(oAuth2UserInfo.getProvider(), oAuth2UserInfo.getProviderId());
         User oAuthUser = user.orElseGet( () ->
-                userService.registerSocialUser(oAuth2UserInfo.getName(), oAuth2UserInfo.getEmail(), oAuth2UserInfo.getProfileUrl())
+                userService.registerSocialUser(oAuth2UserInfo.getEmail(), oAuth2UserInfo.getName(), oAuth2UserInfo.getProfileUrl())
         );
 
         if (user.isEmpty()) oAuthService.link(oAuthUser, oAuth2UserInfo.getProvider(), oAuth2UserInfo.getProviderId());
+        userService.updateLastLoginAt(oAuthUser);
 
         Map<String, Object> attributes = Map.of("uuid", oAuthUser.getUuid());
         return new DefaultOAuth2User(

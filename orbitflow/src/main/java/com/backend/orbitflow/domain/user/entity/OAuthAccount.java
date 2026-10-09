@@ -1,6 +1,7 @@
 package com.backend.orbitflow.domain.user.entity;
 
 import com.backend.orbitflow.domain.user.enums.Provider;
+import com.backend.orbitflow.global.common.entity.BaseEntity;
 import jakarta.persistence.*;
 import lombok.*;
 import org.hibernate.annotations.OnDelete;
@@ -10,9 +11,9 @@ import org.hibernate.annotations.OnDeleteAction;
 @Getter
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@Table(name = "oauth_accounts",
+@Table(name = "social_users",
         uniqueConstraints = @UniqueConstraint(columnNames = {"provider", "provider_id"}))
-public class OAuthAccount {
+public class OAuthAccount extends BaseEntity {
 
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;

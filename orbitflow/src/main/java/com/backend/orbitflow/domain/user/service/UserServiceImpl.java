@@ -2,6 +2,7 @@ package com.backend.orbitflow.domain.user.service;
 
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.domain.user.enums.UserRole;
+import com.backend.orbitflow.domain.user.enums.UserStatus;
 import com.backend.orbitflow.domain.user.error.UserErrorCode;
 import com.backend.orbitflow.global.common.error.exception.CommonException;
 import com.backend.orbitflow.global.util.RedisUtil;
@@ -24,7 +25,7 @@ public class UserServiceImpl implements UserService{
 
     @Transactional(readOnly = true)
     public User getByUuid(String uuid) {
-        return userRepository.findByUuid(uuid).orElseThrow(
+        return userRepository.findByUuidAndDeletedAtIsNullAndStatusNot(uuid, UserStatus.BANNED).orElseThrow(
                 () -> new CommonException(UserErrorCode.USER_NOT_FOUND)
         );
     }
@@ -71,7 +72,7 @@ public class UserServiceImpl implements UserService{
 
     public User updateProfile(String uuid, String name, String profileImage, String introduce, boolean isPrivate) {
         User user = getByUuid(uuid);
-        user.updateUserInfo(name, profileImage, introduce, isPrivate);
+        user.updateUserInfo(name, introduce, profileImage, isPrivate);
         return userRepository.save(user);
     }
 
@@ -96,6 +97,12 @@ public class UserServiceImpl implements UserService{
             throw new CommonException(UserErrorCode.WRONG_USER_NAME);
         }
         user.delete();
+        userRepository.save(user);
+    }
+
+    // 로그인 시점에는 탈퇴 유예 계정도 대상이 되므로 uuid 재조회 없이 엔티티를 받음
+    public void updateLastLoginAt(User user) {
+        user.updateLastLoginAt();
         userRepository.save(user);
     }
 }
