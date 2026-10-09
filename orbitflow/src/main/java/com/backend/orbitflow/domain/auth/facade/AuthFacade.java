@@ -27,6 +27,7 @@ public class AuthFacade{
     public TokenResponse login(LoginRequest request) {
         User user = userService.getByEmail(request.email());
         authService.authenticate(user, request.password());
+        userService.updateLastLoginAt(user);
         return TokenResponse.of(
                 tokenService.createAccessToken(user.getUuid(), user.getEmail(), user.getRole()),
                 tokenService.createRefreshToken(user.getUuid())

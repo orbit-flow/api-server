@@ -21,23 +21,30 @@ public class Follow extends BaseEntity {
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "followee_id")
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "followee_id", nullable = false)
     private User followee;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "follower_id")
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "follower_id", nullable = false)
     private User follower;
 
+    // NOT_FOLLOW는 응답 전용 상태이므로 DB에는 PENDING, ACCEPTED만 저장
     @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, columnDefinition = "enum('PENDING','ACCEPTED')")
     private FollowState state;
 
-    public static Follow of(User followee, User follower, FollowState state) {
+    @Column(name = "is_notification_enabled", nullable = false)
+    private boolean notificationEnabled;
+
+    // 비밀계정이면 PENDING, 공개계정이면 즉시 ACCEPTED
+    public static Follow of(User followee, User follower) {
         return new Follow(
                 null,
                 followee,
                 follower,
-                state
+                followee.isPrivate() ? FollowState.PENDING : FollowState.ACCEPTED,
+                true
         );
     }
 
@@ -45,4 +52,11 @@ public class Follow extends BaseEntity {
         this.state = FollowState.ACCEPTED;
     }
 
+    public void toggleNotification() {
+        this.notificationEnabled = !this.notificationEnabled;
+    }
+
+    public boolean isPending() {
+        return this.state == FollowState.PENDING;
+    }
 }

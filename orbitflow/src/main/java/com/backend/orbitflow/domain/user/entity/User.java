@@ -1,7 +1,7 @@
 package com.backend.orbitflow.domain.user.entity;
 
 import com.backend.orbitflow.domain.user.enums.UserRole;
-import com.backend.orbitflow.domain.user.enums.UserState;
+import com.backend.orbitflow.domain.user.enums.UserStatus;
 import com.backend.orbitflow.global.common.entity.SoftDeleteEntity;
 
 import jakarta.persistence.Column;
@@ -12,6 +12,8 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+
+import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -27,30 +29,41 @@ public class User extends SoftDeleteEntity{
     @Id  @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(unique = true)
+    @Column(nullable = false, unique = true, length = 36)
     private String uuid;
 
-    @Column(unique = true)
+    @Column(nullable = false, unique = true, length = 100)
     private String email;
 
+    // 소셜 가입 사용자는 null
     private String password;
 
+    @Column(nullable = false, length = 50)
     private String name;
     private String introduce;
     private String profileImage;
-    
+
     @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
     private UserRole role;
+
     @Enumerated(EnumType.STRING)
-    private UserState state;
-    
+    @Column(nullable = false)
+    private UserStatus status;
+
+    @Column(nullable = false)
     private boolean isPrivate;
+
+    private LocalDateTime lastLoginAt;
+
+    @Column(nullable = false)
+    private boolean allowNonFollowChatInvite;
 
     public static User of(
         String uuid, String email, String password, String name, UserRole role
     ) {
         return new User(
-            null, uuid, email, password, name, null, null, role, UserState.ACTIVE, false
+            null, uuid, email, password, name, null, null, role, UserStatus.ACTIVE, false, null, true
         );
     }
 
@@ -58,8 +71,12 @@ public class User extends SoftDeleteEntity{
             String uuid, String email, String name, String profileImage
     ) {
         return new User (
-                null, uuid, email, null, name, null, profileImage, UserRole.ROLE_USER, UserState.ACTIVE, false
+                null, uuid, email, null, name, null, profileImage, UserRole.ROLE_USER, UserStatus.ACTIVE, false, null, true
         );
+    }
+
+    public void updateLastLoginAt() {
+        this.lastLoginAt = LocalDateTime.now();
     }
 
     public void updateUserInfo(String name, String introduce, String profileImage, boolean isPrivate) {
@@ -73,8 +90,8 @@ public class User extends SoftDeleteEntity{
         this.email = email;
     }
 
-    public void updateUserState(UserState state) {
-        this.state = state;
+    public void updateUserStatus(UserStatus status) {
+        this.status = status;
     }
 
     public void updatePassword(String password) {

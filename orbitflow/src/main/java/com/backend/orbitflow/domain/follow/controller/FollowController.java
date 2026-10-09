@@ -52,6 +52,36 @@ public class FollowController {
                 ));
     }
 
+    // 비밀계정이 받은 대기 중인 팔로우 요청 목록
+    @GetMapping("/requests")
+    public ResponseEntity<CommonResponse<PageResponse<FollowListResponse>>> getFollowRequests(
+            @AuthenticationPrincipal AuthUser authUser,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String keyword
+    ) {
+        return ResponseEntity
+                .status(HttpStatus.OK)
+                .body(CommonResponse.success(
+                        FollowSuccessCode.GET_FOLLOW_REQUEST_LIST,
+                        followFacade.getFollowRequests(authUser, page, size, keyword)
+                ));
+    }
+
+    // 팔로우한 계정별 활동 알림 on/off
+    @PatchMapping("/{uuid}/notification")
+    public ResponseEntity<CommonResponse<FollowResponse>> toggleNotification(
+            @AuthenticationPrincipal AuthUser authUser,
+            @PathVariable String uuid
+    ) {
+        return ResponseEntity
+                .status(HttpStatus.OK)
+                .body(CommonResponse.success(
+                        FollowSuccessCode.FOLLOW_NOTIFICATION_TOGGLE,
+                        followFacade.toggleNotification(authUser, uuid)
+                ));
+    }
+
     @PostMapping("/{uuid}")
     public ResponseEntity<CommonResponse<FollowResponse>> toggleFollow(
             @AuthenticationPrincipal AuthUser authUser,

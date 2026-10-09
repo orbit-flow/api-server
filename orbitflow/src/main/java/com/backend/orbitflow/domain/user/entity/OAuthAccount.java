@@ -11,7 +11,7 @@ import org.hibernate.annotations.OnDeleteAction;
 @Getter
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@Table(name = "oauth_accounts",
+@Table(name = "social_users",
         uniqueConstraints = @UniqueConstraint(columnNames = {"provider", "provider_id"}))
 public class OAuthAccount extends BaseEntity {
 

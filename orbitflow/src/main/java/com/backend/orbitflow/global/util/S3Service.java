@@ -1,6 +1,9 @@
 package com.backend.orbitflow.global.util;
 
 import java.io.IOException;
+import java.net.MalformedURLException;
+import java.net.URI;
+import java.net.URL;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
@@ -11,41 +14,51 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
-import com.amazonaws.services.s3.AmazonS3Client;
-import com.amazonaws.services.s3.model.CannedAccessControlList;
-import com.amazonaws.services.s3.model.ObjectMetadata;
-import com.amazonaws.services.s3.model.PutObjectRequest;
 import com.backend.orbitflow.global.common.error.exception.CommonException;
 import com.backend.orbitflow.global.error.GlobalErrorCode;
 
 import lombok.RequiredArgsConstructor;
+import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.model.ObjectCannedACL;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
-@Service 
-@RequiredArgsConstructor 
+@Service
+@RequiredArgsConstructor
 public class S3Service {
 
-    private final AmazonS3Client amazonS3Client;
+    private final S3Client s3Client;
 
-    @Value("${cloud.aws.s3.bucket}")
+    @Value("${spring.cloud.aws.s3.bucket}")
     private String bucket;
+
+    @Value("${spring.cloud.aws.region.static}")
+    private String region;
 
     public String uploadFile(String dirName, MultipartFile file) {
         try {
             validateFile(file);
 
             String fileName = createFileName(getExtension(file.getOriginalFilename()));
-            String fileUrl = dirName + "/" + fileName;
+            String fileKey = dirName + "/" + fileName;
 
-            ObjectMetadata metadata = new ObjectMetadata();
-            metadata.setContentType(file.getContentType());
-            metadata.setContentLength(file.getSize());
+            PutObjectRequest putObjectRequest = PutObjectRequest.builder()
+                    .bucket(bucket)
+                    .key(fileKey)
+                    .contentType(file.getContentType())
+                    .contentLength(file.getSize())
+                    .acl(ObjectCannedACL.PUBLIC_READ)
+                    .build();
 
-            amazonS3Client.putObject(
-                new PutObjectRequest(bucket, fileUrl, file.getInputStream(), metadata)
-                        .withCannedAcl(CannedAccessControlList.PublicRead)
+            s3Client.putObject(
+                    putObjectRequest,
+                    RequestBody.fromInputStream(
+                            file.getInputStream(),
+                            file.getSize()
+                    )
             );
+            return "https://" + bucket + ".s3." + region + ".amazonaws.com/" + fileKey;
 
-            return amazonS3Client.getUrl(bucket, fileUrl).toString();
         } catch (IOException e) {
             throw new CommonException(GlobalErrorCode.FILE_UPLOAD_ERROR);
         }
@@ -54,7 +67,7 @@ public class S3Service {
     private void validateFile(MultipartFile file) {
 
         String contentType = file.getContentType();
-        
+
         if (contentType == null || !contentType.startsWith("image/")) {
             throw new CommonException(GlobalErrorCode.INVALID_FILE_TYPE);
         }
@@ -67,19 +80,25 @@ public class S3Service {
     private String createFileName(String ext) {
         return new SimpleDateFormat("yyyyMMddHHmmss").format(new Date())
                 + "-"
-                + UUID.randomUUID().toString()
+                + UUID.randomUUID()
                 + ext;
-            
     }
 
     private String getExtension(String fileName) {
-        if (fileName == null) return "";
+        if (fileName == null) {
+            return "";
+        }
+
         int lastIndex = fileName.lastIndexOf(".");
-        if (lastIndex == -1) return "";
+
+        if (lastIndex == -1) {
+            return "";
+        }
+
         return fileName.substring(lastIndex);
     }
 
-    public List<String> uploadFIles(String dirName, List<MultipartFile> files) {
+    public List<String> uploadFiles(String dirName, List<MultipartFile> files) {
         return files.stream()
                 .map(file -> uploadFile(dirName, file))
                 .collect(Collectors.toList());
@@ -88,7 +107,13 @@ public class S3Service {
     public void deleteFile(String fileUrl) {
         try {
             String key = extractKeyFromUrl(fileUrl);
-            amazonS3Client.deleteObject(bucket, key);
+
+            s3Client.deleteObject(builder -> builder
+                    .bucket(bucket)
+                    .key(key)
+                    .build()
+            );
+
         } catch (CommonException e) {
             throw e;
         } catch (Exception e) {
@@ -98,20 +123,25 @@ public class S3Service {
 
     private String extractKeyFromUrl(String fileUrl) {
         try {
-            java.net.URL url = java.net.URI.create(fileUrl).toURL();
+            URL url = URI.create(fileUrl).toURL();
+
             String path = url.getPath();
+
             if (path.startsWith("/")) {
                 path = path.substring(1);
             }
+
             return path;
-        } catch (IllegalArgumentException | java.net.MalformedURLException e) {
+
+        } catch (IllegalArgumentException | MalformedURLException e) {
             throw new CommonException(GlobalErrorCode.INVALID_FILE_URL);
         }
     }
 
-    public  void deleteFiles(List<String> fileUrls) {
+    public void deleteFiles(List<String> fileUrls) {
         for (String fileUrl : fileUrls) {
             deleteFile(fileUrl);
         }
-    } 
+    }
 }
+
