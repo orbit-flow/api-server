@@ -1,5 +1,6 @@
 package com.backend.orbitflow.domain.team.service;
 
+import com.backend.orbitflow.domain.category.repository.CategoryPermissionRepository;
 import com.backend.orbitflow.domain.team.dto.response.TeamMemberResponse;
 import com.backend.orbitflow.domain.team.entity.Team;
 import com.backend.orbitflow.domain.team.entity.TeamMember;
@@ -10,6 +11,7 @@ import com.backend.orbitflow.domain.team.error.TeamErrorCode;
 import com.backend.orbitflow.domain.team.repository.TeamMemberRepository;
 import com.backend.orbitflow.domain.team.repository.TeamMemberRoleRepository;
 import com.backend.orbitflow.domain.team.repository.TeamRoleRepository;
+import com.backend.orbitflow.domain.todo.repository.TodoRepository;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.global.common.error.exception.CommonException;
 import lombok.RequiredArgsConstructor;
@@ -31,6 +33,8 @@ public class TeamMemberServiceImpl implements TeamMemberService {
     private final TeamRoleRepository teamRoleRepository;
     private final TeamMemberRoleRepository teamMemberRoleRepository;
     private final TeamAuthorityService teamAuthorityService;
+    private final CategoryPermissionRepository categoryPermissionRepository;
+    private final TodoRepository todoRepository;
 
     @Transactional(readOnly = true)
     public List<TeamMemberResponse> getMembers(Team team, User me) {
@@ -72,8 +76,7 @@ public class TeamMemberServiceImpl implements TeamMemberService {
         if (team.isOwner(me)) {
             throw new CommonException(TeamErrorCode.OWNER_CANNOT_LEAVE);
         }
-        removeMember(teamAuthorityService.getMember(team, me));
-        // TODO: 투두 도메인 구현 후 담당 미완료 팀 투두를 상위 역할 구성원에게 상속
+        removeMember(team, teamAuthorityService.getMember(team, me));
         // TODO: 알림 도메인 구현 후 TEAM_LEFT 알림 발송
     }
 
@@ -88,8 +91,8 @@ public class TeamMemberServiceImpl implements TeamMemberService {
         }
         TeamMember targetMember = getTargetMember(team, target);
         teamAuthorityService.checkGrantable(team, actor, teamAuthorityService.getPermissionMask(team, targetMember));
-        removeMember(targetMember);
-        // TODO: 투두 도메인 구현 후 담당 미완료 팀 투두 상속, 알림 도메인 구현 후 TEAM_LEFT 알림 발송
+        removeMember(team, targetMember);
+        // TODO: 알림 도메인 구현 후 TEAM_LEFT 알림 발송
     }
 
     // 요청한 역할 목록으로 교체, 추가·제거되는 역할의 권한은 모두 요청자가 보유해야 함
@@ -149,8 +152,11 @@ public class TeamMemberServiceImpl implements TeamMemberService {
         );
     }
 
-    private void removeMember(TeamMember member) {
+    // 담당하던 미완료 팀 투두는 상위 권한(전체 권한)을 가진 팀 소유자가 상속
+    private void removeMember(Team team, TeamMember member) {
+        todoRepository.reassignIncompleteTeamTodos(team, member.getUser(), team.getOwner());
         teamMemberRoleRepository.deleteAllByMember(member);
+        categoryPermissionRepository.deleteAllByMember(member);
         teamMemberRepository.deleteById(member.getId());
     }
 

@@ -1,5 +1,6 @@
 package com.backend.orbitflow.domain.team.service;
 
+import com.backend.orbitflow.domain.category.repository.CategoryPermissionRepository;
 import com.backend.orbitflow.domain.team.dto.response.TeamResponse;
 import com.backend.orbitflow.domain.team.entity.Team;
 import com.backend.orbitflow.domain.team.entity.TeamMember;
@@ -32,6 +33,7 @@ public class TeamServiceImpl implements TeamService {
     private final TeamMemberRoleRepository teamMemberRoleRepository;
     private final TeamInvitationRepository teamInvitationRepository;
     private final TeamAuthorityService teamAuthorityService;
+    private final CategoryPermissionRepository categoryPermissionRepository;
 
     @Transactional(readOnly = true)
     public Team getActiveTeam(String uuid) {
@@ -78,6 +80,7 @@ public class TeamServiceImpl implements TeamService {
         Team team = getOwnedTeam(user, uuid);
         team.delete();
         teamMemberRoleRepository.deleteAllByTeam(team);
+        categoryPermissionRepository.deleteAllMemberPermissionsByTeam(team);
         teamMemberRepository.deleteAllByTeam(team);
         teamInvitationRepository.cancelAllPendingByTeam(team);
     }
