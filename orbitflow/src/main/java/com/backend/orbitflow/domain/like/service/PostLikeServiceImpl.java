@@ -7,7 +7,9 @@ import com.backend.orbitflow.domain.like.repository.PostLikeRepository;
 import com.backend.orbitflow.domain.post.entity.Post;
 import com.backend.orbitflow.domain.post.service.PostService;
 import com.backend.orbitflow.domain.user.entity.User;
+import com.backend.orbitflow.domain.notification.event.PostLikedEvent;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -23,6 +25,7 @@ public class PostLikeServiceImpl implements PostLikeService {
 
     private final PostLikeRepository postLikeRepository;
     private final PostService postService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public LikeResponse toggleLike(User actor, Long postId) {
         Post post = postService.getViewablePost(actor, postId);
@@ -31,7 +34,7 @@ public class PostLikeServiceImpl implements PostLikeService {
             postLikeRepository.delete(like.get());
         } else {
             postLikeRepository.save(PostLike.of(post, actor));
-            // TODO: 알림 도메인 구현 후 게시글 작성자에게 LIKE 알림 발송 (본인 게시글 제외)
+            eventPublisher.publishEvent(new PostLikedEvent(post.getId(), actor.getId()));
         }
         return new LikeResponse(post.getId(), like.isEmpty(), postLikeRepository.countByPost(post));
     }

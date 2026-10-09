@@ -7,7 +7,10 @@ import com.backend.orbitflow.domain.follow.error.FollowErrorCode;
 import com.backend.orbitflow.domain.follow.repository.FollowRepository;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.global.common.error.exception.CommonException;
+import com.backend.orbitflow.domain.notification.event.FollowAcceptedEvent;
+import com.backend.orbitflow.domain.notification.event.FollowCreatedEvent;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -22,6 +25,7 @@ import java.util.Optional;
 public class FollowServiceImpl implements FollowService {
 
     private final FollowRepository followRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     // follows row가 없으면 NOT_FOLLOW
     @Transactional(readOnly = true)
@@ -53,7 +57,9 @@ public class FollowServiceImpl implements FollowService {
             followRepository.delete(follow.get());
             return null;
         }
-        return followRepository.save(Follow.of(followee, follower));
+        Follow saved = followRepository.save(Follow.of(followee, follower));
+        eventPublisher.publishEvent(new FollowCreatedEvent(saved.getId()));
+        return saved;
     }
 
     public Follow acceptFollow(User me, Long followId) {
@@ -62,6 +68,7 @@ public class FollowServiceImpl implements FollowService {
             throw new CommonException(FollowErrorCode.ALREADY_ACCEPTED);
         }
         follow.acceptFollow();
+        eventPublisher.publishEvent(new FollowAcceptedEvent(follow.getId()));
         return follow;
     }
 

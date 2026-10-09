@@ -14,7 +14,11 @@ import com.backend.orbitflow.domain.team.repository.TeamRoleRepository;
 import com.backend.orbitflow.domain.todo.repository.TodoRepository;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.global.common.error.exception.CommonException;
+import com.backend.orbitflow.domain.notification.event.TeamJoinedEvent;
+import com.backend.orbitflow.domain.notification.event.TeamLeftEvent;
+import com.backend.orbitflow.domain.notification.event.TeamRoleChangedEvent;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,6 +39,7 @@ public class TeamMemberServiceImpl implements TeamMemberService {
     private final TeamAuthorityService teamAuthorityService;
     private final CategoryPermissionRepository categoryPermissionRepository;
     private final TodoRepository todoRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional(readOnly = true)
     public List<TeamMemberResponse> getMembers(Team team, User me) {
@@ -68,7 +73,7 @@ public class TeamMemberServiceImpl implements TeamMemberService {
         }
         TeamMember member = teamMemberRepository.save(TeamMember.of(team, user));
         teamMemberRoleRepository.save(TeamMemberRole.of(member, getOrCreateDefaultRole(team)));
-        // TODO: 알림 도메인 구현 후 가입 대상자와 팀 관리자에게 TEAM_JOINED 알림 발송
+        eventPublisher.publishEvent(new TeamJoinedEvent(team.getId(), user.getId()));
     }
 
     // 탈퇴 즉시 팀 카테고리·투두 접근 불가, 소유자는 위임 후에만 탈퇴 가능
@@ -77,7 +82,7 @@ public class TeamMemberServiceImpl implements TeamMemberService {
             throw new CommonException(TeamErrorCode.OWNER_CANNOT_LEAVE);
         }
         removeMember(team, teamAuthorityService.getMember(team, me));
-        // TODO: 알림 도메인 구현 후 TEAM_LEFT 알림 발송
+        eventPublisher.publishEvent(new TeamLeftEvent(team.getId(), me.getId(), false));
     }
 
     // 소유자가 아니면 자신이 보유하지 않은 권한을 가진 구성원은 추방할 수 없음
@@ -92,7 +97,7 @@ public class TeamMemberServiceImpl implements TeamMemberService {
         TeamMember targetMember = getTargetMember(team, target);
         teamAuthorityService.checkGrantable(team, actor, teamAuthorityService.getPermissionMask(team, targetMember));
         removeMember(team, targetMember);
-        // TODO: 알림 도메인 구현 후 TEAM_LEFT 알림 발송
+        eventPublisher.publishEvent(new TeamLeftEvent(team.getId(), target.getId(), true));
     }
 
     // 요청한 역할 목록으로 교체, 추가·제거되는 역할의 권한은 모두 요청자가 보유해야 함
@@ -131,7 +136,9 @@ public class TeamMemberServiceImpl implements TeamMemberService {
         teamMemberRoleRepository.saveAll(added.stream()
                 .map(role -> TeamMemberRole.of(targetMember, role))
                 .toList());
-        // TODO: 알림 도메인 구현 후 TEAM_ROLE_CHANGED 알림 발송
+        if (!removed.isEmpty() || !added.isEmpty()) {
+            eventPublisher.publishEvent(new TeamRoleChangedEvent(team.getId(), target.getId()));
+        }
         return toResponse(team, targetMember, requestedRoles);
     }
 

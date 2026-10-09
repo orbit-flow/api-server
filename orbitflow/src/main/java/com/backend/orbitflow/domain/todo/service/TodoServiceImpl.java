@@ -12,7 +12,9 @@ import com.backend.orbitflow.domain.todo.error.TodoErrorCode;
 import com.backend.orbitflow.domain.todo.repository.TodoRepository;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.global.common.error.exception.CommonException;
+import com.backend.orbitflow.domain.notification.event.TodoCompletedEvent;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,6 +37,7 @@ public class TodoServiceImpl implements TodoService {
     private final CategoryService categoryService;
     private final TodoAuthorityService todoAuthorityService;
     private final RoutineService routineService;
+    private final ApplicationEventPublisher eventPublisher;
 
     // 개인 투두의 담당자는 카테고리 소유자, 팀 투두는 지정한 구성원(미지정 시 생성자)
     public TodoResponse createTodo(
@@ -72,7 +75,7 @@ public class TodoServiceImpl implements TodoService {
         if (routine != null) {
             routineService.upsertRoutine(todo, routine.durationType(), routine.duration(), routine.daysOfWeek(), routine.repeatEndDate());
         }
-        // TODO: 알림 도메인 구현 후 remindBeforeMinutes 기준 리마인드(REMINDER) 예약
+        // 리마인드는 TodoReminderScheduler가 remindBeforeMinutes 기준으로 발송
         return TodoResponse.from(todo);
     }
 
@@ -127,7 +130,10 @@ public class TodoServiceImpl implements TodoService {
         Todo todo = getActiveTodo(todoId);
         todoAuthorityService.checkComplete(todo, actor);
         todo.toggleComplete();
-        // TODO: 알림 도메인 구현 후 완료 시 팔로워에게 TODO_COMPLETED 알림, 타임라인 노출
+        if (todo.isCompleted()) {
+            eventPublisher.publishEvent(new TodoCompletedEvent(todo.getId(), actor.getId()));
+        }
+        // TODO: 타임라인 구현 시 완료 활동 노출
         return TodoResponse.from(todo);
     }
 

@@ -9,7 +9,9 @@ import com.backend.orbitflow.domain.post.entity.Post;
 import com.backend.orbitflow.domain.post.service.PostService;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.global.common.error.exception.CommonException;
+import com.backend.orbitflow.domain.notification.event.CommentCreatedEvent;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -28,6 +30,7 @@ public class CommentServiceImpl implements CommentService {
     private final CommentRepository commentRepository;
     private final PostService postService;
     private final BlockService blockService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public CommentResponse createComment(User actor, Long postId, Long parentCommentId, String content) {
         Post post = postService.getViewablePost(actor, postId);
@@ -42,7 +45,7 @@ public class CommentServiceImpl implements CommentService {
             }
         }
         Comment comment = commentRepository.save(Comment.of(post, actor, parent, content));
-        // TODO: 알림 도메인 구현 후 게시글 작성자에게 NEWCOMMENT 알림 발송
+        eventPublisher.publishEvent(new CommentCreatedEvent(comment.getId()));
         return CommentResponse.from(comment);
     }
 

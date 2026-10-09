@@ -2,6 +2,7 @@ package com.backend.orbitflow.domain.todo.dto.request;
 
 import com.backend.orbitflow.domain.todo.enums.TodoType;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -31,6 +32,7 @@ public record TodoCreateRequest(
 
         // null이면 리마인드 없음
         @Min(value = 0, message = "리마인드 시간은 0 이상이어야 합니다.")
+        @Max(value = 10080, message = "리마인드 시간은 최대 7일(10080분) 전까지 설정할 수 있습니다.")
         Integer remindBeforeMinutes,
 
         // null이면 반복 없음

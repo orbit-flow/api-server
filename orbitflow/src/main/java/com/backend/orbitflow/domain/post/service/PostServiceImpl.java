@@ -20,7 +20,9 @@ import com.backend.orbitflow.domain.todo.repository.TodoRepository;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.global.common.error.exception.CommonException;
 import com.backend.orbitflow.global.util.S3Service;
+import com.backend.orbitflow.domain.notification.event.PostCreatedEvent;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -57,6 +59,7 @@ public class PostServiceImpl implements PostService {
     private final S3Service s3Service;
     private final CommentRepository commentRepository;
     private final PostLikeRepository postLikeRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
     // 게시글을 조회할 수 있는 사용자만 댓글·대댓글·좋아요 가능
     @Transactional(readOnly = true)
@@ -78,7 +81,8 @@ public class PostServiceImpl implements PostService {
 
         Post post = postRepository.save(Post.of(todo, actor, content));
         List<PostImage> postImages = saveImages(post, upload(files), 0);
-        // TODO: 알림 도메인 구현 후 팔로워에게 NEWPOST 알림, 타임라인 노출
+        eventPublisher.publishEvent(new PostCreatedEvent(post.getId()));
+        // TODO: 타임라인 구현 시 노출
         return PostResponse.of(post, postImages, 0, 0, false);
     }
 

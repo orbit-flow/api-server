@@ -68,6 +68,21 @@ public interface TodoRepository extends JpaRepository<Todo, Long> {
             @Param("to") LocalDateTime to
     );
 
+    // 리마인드 후보 : 미완료·미삭제이고 리마인드가 설정된, 시작 시각이 (from, to] 구간인 투두
+    @Query("""
+            select t from Todo t
+            join fetch t.assignee
+            join fetch t.category c
+            left join fetch c.user
+            left join fetch c.team
+            where t.remindBeforeMinutes is not null
+              and t.isCompleted = false
+              and t.deletedAt is null
+              and t.startDate > :from
+              and t.startDate <= :to
+            """)
+    List<Todo> findRemindCandidates(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
+
     List<Todo> findAllByParentTodoAndDeletedAtIsNullOrderBySortOrderAsc(Todo parentTodo);
 
     @Query("select coalesce(max(t.sortOrder), -1) from Todo t where t.parentTodo = :parent")

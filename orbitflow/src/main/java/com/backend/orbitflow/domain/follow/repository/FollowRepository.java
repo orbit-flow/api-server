@@ -11,11 +11,23 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface FollowRepository extends JpaRepository<Follow, Long> {
 
     Optional<Follow> findByFollowerAndFollowee(User follower, User followee);
+
+    // 활동 알림 수신 대상 : 승인된 팔로워 중 해당 계정의 알림을 켠 사용자 (탈퇴 사용자 제외)
+    @Query("""
+            select u from Follow f
+            join f.follower u
+            where f.followee = :user
+              and f.state = com.backend.orbitflow.domain.follow.enums.FollowState.ACCEPTED
+              and f.notificationEnabled = true
+              and u.deletedAt is null
+            """)
+    List<User> findNotifiableFollowers(@Param("user") User user);
 
     @Query("select f from Follow f join fetch f.follower join fetch f.followee where f.id = :id")
     Optional<Follow> findWithUsersById(@Param("id") Long id);

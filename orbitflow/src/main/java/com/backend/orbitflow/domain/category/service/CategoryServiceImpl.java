@@ -18,7 +18,10 @@ import com.backend.orbitflow.domain.team.service.TeamAuthorityService;
 import com.backend.orbitflow.domain.todo.repository.TodoRepository;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.global.common.error.exception.CommonException;
+import com.backend.orbitflow.domain.notification.event.CategoryVisibilityChangedEvent;
+import com.backend.orbitflow.domain.team.repository.TeamMemberRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -38,6 +41,8 @@ public class CategoryServiceImpl implements CategoryService {
     private final TeamAuthorityService teamAuthorityService;
     private final TeamRoleRepository teamRoleRepository;
     private final TodoRepository todoRepository;
+    private final ApplicationEventPublisher eventPublisher;
+    private final TeamMemberRepository teamMemberRepository;
 
     public CategoryResponse createPersonalCategory(User user, String name, String color, Visibility visibility) {
         return CategoryResponse.from(categoryRepository.save(Category.personal(user, name, color, visibility)));
@@ -78,8 +83,13 @@ public class CategoryServiceImpl implements CategoryService {
     public CategoryResponse updateCategory(User actor, Long categoryId, String name, String color, Visibility visibility) {
         Category category = getActiveCategory(categoryId);
         categoryAuthorityService.checkEdit(category, actor);
+        Visibility before = category.getVisibility();
+        Set<Long> viewerIdsBefore = category.isTeamCategory() ? teamViewerIds(category) : Set.of();
         category.updateCategory(name, color, visibility);
-        // TODO: 알림 도메인 구현 후 팀 카테고리 공개 범위 변경 시 변경 전·후 조회 권한이 있는 팀원에게 CATEGORY_VISIBILITY_CHANGED 알림
+        // 팀 카테고리 공개 범위 변경 시 변경 전·후 조회 권한이 있는 팀원에게 알림
+        if (category.isTeamCategory() && before != category.getVisibility()) {
+            eventPublisher.publishEvent(new CategoryVisibilityChangedEvent(category.getId(), actor.getId(), viewerIdsBefore));
+        }
         return CategoryResponse.from(category);
     }
 
@@ -142,6 +152,16 @@ public class CategoryServiceImpl implements CategoryService {
             throw new CommonException(CategoryErrorCode.CATEGORY_NOT_FOUND);
         }
         return category;
+    }
+
+    private Set<Long> teamViewerIds(Category category) {
+        Set<Long> ids = new HashSet<>();
+        for (TeamMember member : teamMemberRepository.findAllWithUserByTeam(category.getTeam())) {
+            if (categoryAuthorityService.canView(category, member.getUser())) {
+                ids.add(member.getUser().getId());
+            }
+        }
+        return ids;
     }
 
     private Category getTeamCategoryForManage(User actor, Long categoryId) {
