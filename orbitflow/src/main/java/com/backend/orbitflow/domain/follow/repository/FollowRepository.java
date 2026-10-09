@@ -36,7 +36,7 @@ public interface FollowRepository extends JpaRepository<Follow, Long> {
             where f.follower = :target
               and f.state = com.backend.orbitflow.domain.follow.enums.FollowState.ACCEPTED
               and u.deletedAt is null
-              and u.state <> com.backend.orbitflow.domain.user.enums.UserState.BANNED
+              and u.status <> com.backend.orbitflow.domain.user.enums.UserStatus.BANNED
               and (:keyword is null or u.name like concat('%', :keyword, '%'))
               and not exists (select b.id from Block b
                               where (b.blocker = :me and b.blockee = u) or (b.blocker = u and b.blockee = :me))
@@ -48,7 +48,7 @@ public interface FollowRepository extends JpaRepository<Follow, Long> {
             where f.follower = :target
               and f.state = com.backend.orbitflow.domain.follow.enums.FollowState.ACCEPTED
               and u.deletedAt is null
-              and u.state <> com.backend.orbitflow.domain.user.enums.UserState.BANNED
+              and u.status <> com.backend.orbitflow.domain.user.enums.UserStatus.BANNED
               and (:keyword is null or u.name like concat('%', :keyword, '%'))
               and not exists (select b.id from Block b
                               where (b.blocker = :me and b.blockee = u) or (b.blocker = u and b.blockee = :me))
@@ -76,7 +76,7 @@ public interface FollowRepository extends JpaRepository<Follow, Long> {
             where f.followee = :target
               and f.state = :state
               and u.deletedAt is null
-              and u.state <> com.backend.orbitflow.domain.user.enums.UserState.BANNED
+              and u.status <> com.backend.orbitflow.domain.user.enums.UserStatus.BANNED
               and (:keyword is null or u.name like concat('%', :keyword, '%'))
               and not exists (select b.id from Block b
                               where (b.blocker = :me and b.blockee = u) or (b.blocker = u and b.blockee = :me))
@@ -88,7 +88,7 @@ public interface FollowRepository extends JpaRepository<Follow, Long> {
             where f.followee = :target
               and f.state = :state
               and u.deletedAt is null
-              and u.state <> com.backend.orbitflow.domain.user.enums.UserState.BANNED
+              and u.status <> com.backend.orbitflow.domain.user.enums.UserStatus.BANNED
               and (:keyword is null or u.name like concat('%', :keyword, '%'))
               and not exists (select b.id from Block b
                               where (b.blocker = :me and b.blockee = u) or (b.blocker = u and b.blockee = :me))

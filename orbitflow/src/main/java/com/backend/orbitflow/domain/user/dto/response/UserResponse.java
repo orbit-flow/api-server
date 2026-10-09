@@ -12,7 +12,7 @@ public record UserResponse(
     String email,
     String profileImage,
     String introduce,
-    UserStatus state,
+    UserStatus status,
     boolean isPrivate,
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
     LocalDateTime createdAt
@@ -24,7 +24,7 @@ public record UserResponse(
             user.getEmail(),
             user.getProfileImage(),
             user.getIntroduce(),
-            user.getState(),
+            user.getStatus(),
             user.isPrivate(),
             user.getCreatedAt()
         );

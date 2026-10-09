@@ -10,6 +10,6 @@ public record BlockListResponse(
         String name,
         String profileImage,
         @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
-        LocalDateTime followAt
+        LocalDateTime blockedAt
 ) {
 }

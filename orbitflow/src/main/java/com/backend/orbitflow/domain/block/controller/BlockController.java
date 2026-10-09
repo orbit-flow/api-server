@@ -20,18 +20,33 @@ public class BlockController {
 
     private final BlockFacade blockFacade;
 
-//    @GetMapping
-//    public ResponseEntity<CommonResponse<PageResponse<BlockListResponse>>> getBlocks(
-//            @AuthenticationPrincipal AuthUser authUser,
-//            @RequestParam(defaultValue = "1") int page,
-//            @RequestParam(defaultValue = "10") int size,
-//            @RequestParam(required = false) String keyword
-//    ) {
-//        return ResponseEntity
-//                .status(HttpStatus.OK)
-//                .body(CommonResponse.success(
-//                        BlockSuccessCode.GET_BLOCK_LIST,
-//                        blockFacade.getBlocks(authUser, page, size, keyword)
-//                ));
-//    }
+    // 내가 차단한 사용자 목록
+    @GetMapping
+    public ResponseEntity<CommonResponse<PageResponse<BlockListResponse>>> getBlocks(
+            @AuthenticationPrincipal AuthUser authUser,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "10") int size,
+            @RequestParam(required = false) String keyword
+    ) {
+        return ResponseEntity
+                .status(HttpStatus.OK)
+                .body(CommonResponse.success(
+                        BlockSuccessCode.GET_BLOCK_LIST,
+                        blockFacade.getBlockList(authUser, page, size, keyword)
+                ));
+    }
+
+    // 차단 / 차단 해제 토글
+    @PostMapping("/{uuid}")
+    public ResponseEntity<CommonResponse<BlockResponse>> toggleBlock(
+            @AuthenticationPrincipal AuthUser authUser,
+            @PathVariable String uuid
+    ) {
+        return ResponseEntity
+                .status(HttpStatus.OK)
+                .body(CommonResponse.success(
+                        BlockSuccessCode.BLOCK_SUCCESS,
+                        blockFacade.toggleBlock(authUser, uuid)
+                ));
+    }
 }

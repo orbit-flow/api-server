@@ -25,7 +25,7 @@ public class UserServiceImpl implements UserService{
 
     @Transactional(readOnly = true)
     public User getByUuid(String uuid) {
-        return userRepository.findByUuidAndDeletedAtIsNullAndStateNot(uuid, UserStatus.BANNED).orElseThrow(
+        return userRepository.findByUuidAndDeletedAtIsNullAndStatusNot(uuid, UserStatus.BANNED).orElseThrow(
                 () -> new CommonException(UserErrorCode.USER_NOT_FOUND)
         );
     }

@@ -9,6 +9,6 @@ import java.util.Optional;
 
 public interface UserRepository extends JpaRepository<User, Long>{
 
-    Optional<User> findByUuidAndDeletedAtIsNullAndStateNot(String uuid, UserStatus state);
+    Optional<User> findByUuidAndDeletedAtIsNullAndStatusNot(String uuid, UserStatus status);
     Optional<User> findByEmail(String email);
 }
