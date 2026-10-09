@@ -12,6 +12,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Optional;
+
 @Service
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
@@ -20,9 +22,13 @@ public class TeamAuthorityServiceImpl implements TeamAuthorityService {
     private final TeamMemberRepository teamMemberRepository;
     private final TeamMemberRoleRepository teamMemberRoleRepository;
 
+    public Optional<TeamMember> findMember(Team team, User user) {
+        return teamMemberRepository.findByTeamAndUser(team, user);
+    }
+
     // 비소속 사용자에게는 팀 존재 여부를 노출하지 않도록 NOT_FOUND 처리
     public TeamMember getMember(Team team, User user) {
-        return teamMemberRepository.findByTeamAndUser(team, user).orElseThrow(
+        return findMember(team, user).orElseThrow(
                 () -> new CommonException(TeamErrorCode.TEAM_NOT_FOUND)
         );
     }
