@@ -2,6 +2,7 @@ package com.backend.orbitflow.global.security;
 
 import java.util.List;
 
+import com.backend.orbitflow.domain.auth.advice.OAuth2FailureHandler;
 import com.backend.orbitflow.domain.auth.advice.OAuth2SuccessHandler;
 import com.backend.orbitflow.domain.auth.facade.AuthFacade;
 import com.backend.orbitflow.domain.auth.facade.OAuthFacade;
@@ -12,6 +13,7 @@ import org.springframework.security.config.annotation.method.configuration.Enabl
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.annotation.web.configurers.DefaultLoginPageConfigurer;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -32,6 +34,8 @@ public class SecurityConfig {
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final OAuthFacade oAuthFacade;
     private final OAuth2SuccessHandler oAuth2SuccessHandler;
+    private final OAuth2FailureHandler oAuth2FailureHandler;
+    private final SecurityErrorResponder securityErrorResponder;
 
     @Bean
     public PasswordEncoder passwordEncoder() {
@@ -54,7 +58,8 @@ public class SecurityConfig {
                         "/api/auth/**", "/oauth2/**"
                 ).permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/users").permitAll()
-                .requestMatchers("/", "/*.html", "/css/**", "/js/**").permitAll()
+                // 오류 응답(/error)은 ErrorResponseController가 JSON으로 반환
+                .requestMatchers("/error").permitAll()
                 // WebSocket 핸드셰이크는 허용, 인증은 STOMP CONNECT 프레임에서 수행 (StompAuthInterceptor)
                 .requestMatchers("/ws/**").permitAll()
 
@@ -70,6 +75,15 @@ public class SecurityConfig {
                 .userInfoEndpoint(userInfo ->
                         userInfo.userService(oAuthFacade)
                 ).successHandler(oAuth2SuccessHandler)
+                .failureHandler(oAuth2FailureHandler)
+        );
+
+        // 서버가 HTML 로그인 페이지를 만들지 않음 (FE가 로그인 화면 담당)
+        // 인증 없음·권한 없음은 로그인 페이지 리다이렉트 대신 JSON(401·403)으로 응답
+        http.removeConfigurer(DefaultLoginPageConfigurer.class);
+        http.exceptionHandling(exception -> exception
+                .authenticationEntryPoint(securityErrorResponder)
+                .accessDeniedHandler(securityErrorResponder)
         );
 
         http.formLogin(AbstractHttpConfigurer::disable);

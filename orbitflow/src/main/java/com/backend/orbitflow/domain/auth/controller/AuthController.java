@@ -23,6 +23,11 @@ import org.springframework.web.bind.annotation.*;
 
 import static com.backend.orbitflow.global.security.JwtProvider.AUTHORIZATION_HEADER;
 import static com.backend.orbitflow.global.security.JwtProvider.REFRESH_HEADER;
+import com.backend.orbitflow.domain.auth.dto.response.LoginResponse;
+import com.backend.orbitflow.domain.auth.dto.response.LoginResult;
+import com.backend.orbitflow.domain.suspension.dto.response.SuspendedAccountResponse;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 
 @RestController
 @RequiredArgsConstructor
@@ -32,17 +37,40 @@ public class AuthController {
     private final AuthFacade authFacade;
 
     // access token은 Authorization 헤더(토큰 재발급과 동일), refresh token은 HttpOnly 쿠키로 전달
+    // 정지 계정은 토큰 없이 data.suspended = true와 정지 안내 정보만 반환
     @PostMapping("/login")
-    public ResponseEntity<CommonResponse<Void>> login(
+    public ResponseEntity<CommonResponse<LoginResponse>> login(
             @Valid @RequestBody LoginRequest request
     ) {
-        TokenResponse token = authFacade.login(request);
+        LoginResult result = authFacade.login(request);
+        if (result.isSuspended()) {
+            return ResponseEntity
+                    .status(HttpStatus.OK)
+                    .body(CommonResponse.success(
+                            AuthSuccessCode.LOGIN_SUSPENDED,
+                            result.response()
+                    ));
+        }
         return ResponseEntity
                 .status(HttpStatus.OK)
-                .header(AUTHORIZATION_HEADER, token.accessToken())
-                .header(HttpHeaders.SET_COOKIE, token.refreshToken().toString())
+                .header(AUTHORIZATION_HEADER, result.token().accessToken())
+                .header(HttpHeaders.SET_COOKIE, result.token().refreshToken().toString())
                 .body(CommonResponse.success(
-                        AuthSuccessCode.LOGIN_SUCCESS
+                        AuthSuccessCode.LOGIN_SUCCESS,
+                        result.response()
+                ));
+    }
+
+    // 소셜 로그인 정지 안내 : FE /suspended?ticket=... 화면에서 정지 사유·기간 조회 (10분간 유효)
+    @GetMapping("/suspension-notice")
+    public ResponseEntity<CommonResponse<SuspendedAccountResponse>> getSuspensionNotice(
+            @RequestParam String ticket
+    ) {
+        return ResponseEntity
+                .status(HttpStatus.OK)
+                .body(CommonResponse.success(
+                        AuthSuccessCode.SUSPENSION_NOTICE,
+                        authFacade.getSuspensionNotice(ticket)
                 ));
     }
 

@@ -13,6 +13,8 @@ public enum AuthSuccessCode implements SuccessCode {
     PASSWORD_RESET_MAIL_SENT(HttpStatus.OK, "가입된 이메일이라면 비밀번호 재설정 링크가 발송됩니다."),
     PASSWORD_RESET_SUCCESS(HttpStatus.OK, "비밀번호가 재설정되었습니다. 새 비밀번호로 로그인해주세요."),
     LOGIN_SUCCESS(HttpStatus.OK, "로그인 되었습니다."),
+    LOGIN_SUSPENDED(HttpStatus.OK, "정지된 계정입니다. 정지 안내를 확인해주세요."),
+    SUSPENSION_NOTICE(HttpStatus.OK, "정지 안내가 조회되었습니다."),
     LOGOUT_SUCCESS(HttpStatus.OK, "로그아웃 되었습니다."),
     OAUTH_LOGIN_SUCCESS(HttpStatus.OK, "소셜 로그인 되었습니다."),
     REISSUE_SUCCESS(HttpStatus.OK, "토큰이 재발급 되었습니다."),

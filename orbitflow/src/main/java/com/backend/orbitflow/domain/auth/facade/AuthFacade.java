@@ -23,6 +23,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import com.backend.orbitflow.domain.auth.dto.response.LoginResult;
+import com.backend.orbitflow.domain.suspension.dto.response.SuspendedAccountResponse;
+import com.backend.orbitflow.domain.suspension.error.SuspensionErrorCode;
+import com.backend.orbitflow.domain.suspension.service.SuspensionNoticeTicketService;
+import java.util.Optional;
 
 @Component
 @RequiredArgsConstructor
@@ -34,22 +39,36 @@ public class AuthFacade{
     private final EmailService emailService;
     private final SuspensionService suspensionService;
     private final PasswordResetService passwordResetService;
+    private final SuspensionNoticeTicketService suspensionNoticeTicketService;
 
     @Value("${app.front-url}")
     private String frontUrl;
 
-    // 탈퇴 유예 계정은 복구, 정지 계정은 정지 사유·기간과 함께 거부, 휴면 계정은 이메일 인증 안내와 함께 거부
+    // 탈퇴 유예 계정은 복구, 휴면 계정은 이메일 인증 안내와 함께 거부
+    // 정지 계정은 로그인은 성공하되 토큰 없이 정지 안내 정보만 반환 (정지 시 refresh token은 이미 폐기됨)
     @Transactional
-    public TokenResponse login(LoginRequest request) {
+    public LoginResult login(LoginRequest request) {
         User user = userService.getByEmail(request.email());
         authService.authenticate(user, request.password());
         userService.restoreIfWithdrawn(user);
-        suspensionService.validateNotSuspended(user);
+        Optional<SuspendedAccountResponse> suspension = suspensionService.findActiveNotice(user);
+        if (suspension.isPresent()) {
+            return LoginResult.suspended(suspension.get());
+        }
         userService.validateNotDormant(user);
         userService.updateLastLoginAt(user);
-        return TokenResponse.of(
+        return LoginResult.success(TokenResponse.of(
                 tokenService.createAccessToken(user.getUuid(), user.getEmail(), user.getRole()),
                 tokenService.createRefreshToken(user.getUuid())
+        ));
+    }
+
+    // 소셜 로그인 정지 안내 : 실패 리다이렉트로 받은 조회 키로 정지 사유·기간 조회
+    @Transactional
+    public SuspendedAccountResponse getSuspensionNotice(String ticket) {
+        User user = userService.getByUuidIncludingBanned(suspensionNoticeTicketService.getUserUuid(ticket));
+        return suspensionService.findActiveNotice(user).orElseThrow(
+                () -> new CommonException(SuspensionErrorCode.SUSPENSION_NOTICE_EXPIRED)
         );
     }
 

@@ -92,7 +92,8 @@ public class SuspensionServiceImpl implements SuspensionService {
         return SuspensionResponse.from(suspension);
     }
 
-    // 스케줄러 : 만료 시각이 지난 기간 정지를 EXPIRED 처리하고 계정 복구
+    // 일일 배치 : 만료 시각이 지난 기간 정지를 EXPIRED 처리하고 계정 복구
+    // 본인의 접근은 Redis 키 만료와 로그인 시 즉시 해제로 지연 없이 복구되며, 배치는 다른 사용자에게 보이는 계정 상태를 정리
     public void expireAll() {
         List<Suspension> expired = suspensionRepository.findAllExpired(LocalDateTime.now());
         expired.forEach(this::expire);
@@ -101,23 +102,23 @@ public class SuspensionServiceImpl implements SuspensionService {
         }
     }
 
-    // 로그인 시 호출 : 만료된 정지는 즉시 해제 처리, 진행 중이면 정지 사유·기간과 함께 거부
-    public void validateNotSuspended(User user) {
+    // 로그인·소셜 로그인 시 호출 : 만료된 정지는 즉시 해제(일일 배치를 기다리지 않음), 진행 중인 정지만 안내 정보로 반환
+    public Optional<SuspendedAccountResponse> findActiveNotice(User user) {
         if (user.getStatus() != UserStatus.BANNED) {
-            return;
+            return Optional.empty();
         }
         Optional<Suspension> active = suspensionRepository.findActiveByUser(user);
         if (active.isEmpty()) {
             // 정지 이력과 계정 상태가 어긋난 경우 계정 상태를 기준 데이터(정지 이력)에 맞춤
             restoreUser(user);
-            return;
+            return Optional.empty();
         }
         Suspension suspension = active.get();
         if (suspension.isExpiredAt(LocalDateTime.now())) {
             expire(suspension);
-            return;
+            return Optional.empty();
         }
-        throw new CommonException(SuspensionErrorCode.ACCOUNT_SUSPENDED, SuspendedAccountResponse.from(suspension));
+        return Optional.of(SuspendedAccountResponse.from(suspension));
     }
 
     private void expire(Suspension suspension) {

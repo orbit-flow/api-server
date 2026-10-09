@@ -39,6 +39,7 @@ public class UserController {
 
     private final UserFacade userFacade;
 
+    // 회원가입 메서드
     @PostMapping
     public ResponseEntity<CommonResponse<UserResponse>> signUp (
         @Valid @RequestBody UserSignupRequest request
@@ -76,7 +77,6 @@ public class UserController {
             ));
     }
 
-    // multipart : image (최대 10MB)
     @PutMapping(value = "/me/profile-image", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<CommonResponse<UserResponse>> updateProfileImage(
         @AuthenticationPrincipal AuthUser authUser,

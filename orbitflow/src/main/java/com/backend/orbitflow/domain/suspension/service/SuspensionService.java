@@ -7,6 +7,8 @@ import com.backend.orbitflow.domain.user.entity.User;
 import org.springframework.data.domain.Page;
 
 import java.time.LocalDateTime;
+import com.backend.orbitflow.domain.suspension.dto.response.SuspendedAccountResponse;
+import java.util.Optional;
 
 public interface SuspensionService {
 
@@ -16,5 +18,5 @@ public interface SuspensionService {
     SuspensionResponse updateSuspension(Long suspensionId, String reason, LocalDateTime expiresAt);
     SuspensionResponse release(User admin, Long suspensionId, String releasedReason);
     void expireAll();
-    void validateNotSuspended(User user);
+    Optional<SuspendedAccountResponse> findActiveNotice(User user);
 }

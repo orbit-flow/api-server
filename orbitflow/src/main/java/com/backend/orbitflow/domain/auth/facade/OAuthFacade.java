@@ -23,6 +23,8 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import com.backend.orbitflow.domain.auth.advice.SuspendedAccountOAuth2Exception;
+import com.backend.orbitflow.domain.suspension.service.SuspensionNoticeTicketService;
 
 @Component
 @RequiredArgsConstructor
@@ -32,6 +34,7 @@ public class OAuthFacade extends DefaultOAuth2UserService {
     private final OAuthService oAuthService;
     private final UserService userService;
     private final SuspensionService suspensionService;
+    private final SuspensionNoticeTicketService suspensionNoticeTicketService;
 
     @Override
     @NullMarked
@@ -61,10 +64,9 @@ public class OAuthFacade extends DefaultOAuth2UserService {
         } catch (CommonException e) {
             throw new OAuth2AuthenticationException(new OAuth2Error("account_withdrawn"), e.getMessage());
         }
-        try {
-            suspensionService.validateNotSuspended(oAuthUser);
-        } catch (CommonException e) {
-            throw new OAuth2AuthenticationException(new OAuth2Error("account_suspended"), e.getMessage());
+        // 정지 계정은 토큰 없이 FE 정지 안내 화면으로 (안내 화면은 조회 키로 정지 사유·기간 조회)
+        if (suspensionService.findActiveNotice(oAuthUser).isPresent()) {
+            throw new SuspendedAccountOAuth2Exception(suspensionNoticeTicketService.issue(oAuthUser.getUuid()));
         }
         try {
             userService.validateNotDormant(oAuthUser);
