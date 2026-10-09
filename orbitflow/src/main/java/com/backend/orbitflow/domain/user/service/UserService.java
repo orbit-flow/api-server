@@ -1,5 +1,7 @@
 package com.backend.orbitflow.domain.user.service;
 
+import java.util.Optional;
+
 import com.backend.orbitflow.domain.user.entity.User;
 
 public interface UserService {
@@ -7,6 +9,8 @@ public interface UserService {
     User getByUuid(String uuid);
     User getByUuidIncludingBanned(String uuid);
     User getByEmail(String email);
+    Optional<User> findByEmail(String email);
+    User resetPassword(String uuid, String encodedPassword);
     User register(String email, String password, String name, String varifyToken);
     User registerSocialUser(String email, String name, String profileImage);
     User updateProfile(String uuid, String name, String introduce, boolean isPrivate);

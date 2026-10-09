@@ -14,6 +14,7 @@ import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -23,6 +24,7 @@ import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import com.backend.orbitflow.domain.user.dto.response.OAuthAccountResponse;
+import com.backend.orbitflow.domain.user.dto.response.UserPasswordUpdateResult;
 import com.backend.orbitflow.domain.user.enums.Provider;
 import java.util.List;
 import org.springframework.web.bind.annotation.RequestPart;
@@ -154,16 +156,19 @@ public class UserController {
             ));
     }
 
+    // 현재 비밀번호 확인 후 변경, 현재 기기에는 새 refresh token을 발급하고 다른 기기의 세션은 종료
     @PutMapping("/me/password")
     public ResponseEntity<CommonResponse<UserResponse>> updatePassword(
         @AuthenticationPrincipal AuthUser authUser,
         @Valid @RequestBody UserPasswordUpdateRequest request
     ) {
+        UserPasswordUpdateResult result = userFacade.updatePassword(authUser, request);
         return ResponseEntity
             .status(HttpStatus.OK)
+            .header(HttpHeaders.SET_COOKIE, result.refreshToken().toString())
             .body(CommonResponse.success(
                 UserSuccessCode.USER_PASSWORD_UPDATE,
-                userFacade.updatePassword(authUser, request)
+                result.user()
             ));
     }
 

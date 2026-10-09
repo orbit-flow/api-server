@@ -8,6 +8,7 @@ import com.backend.orbitflow.domain.user.enums.Provider;
 import com.backend.orbitflow.domain.user.service.OAuthService;
 import com.backend.orbitflow.domain.user.dto.request.*;
 import com.backend.orbitflow.domain.user.entity.User;
+import com.backend.orbitflow.domain.user.dto.response.UserPasswordUpdateResult;
 import com.backend.orbitflow.domain.user.error.UserErrorCode;
 import com.backend.orbitflow.global.common.error.exception.CommonException;
 import com.backend.orbitflow.global.util.EmailService;
@@ -82,15 +83,24 @@ public class UserFacade {
         ));
     }
 
+    // 현재 비밀번호 확인 후 변경 (소셜 전용 계정은 최초 설정 API 사용)
+    // refresh token은 사용자당 1개이므로 현재 기기에 새로 발급하면 다른 기기의 세션은 갱신되지 않고 종료됨
     @Transactional
-    public UserResponse updatePassword(AuthUser authUser, UserPasswordUpdateRequest request) {
+    public UserPasswordUpdateResult updatePassword(AuthUser authUser, UserPasswordUpdateRequest request) {
         User user = userService.getByUuid(authUser.getUuid());
+        if (user.getPassword() == null) {
+            throw new CommonException(UserErrorCode.PASSWORD_NOT_SET);
+        }
         authService.verifyPassword(request.password(), user.getPassword());
-        return UserResponse.from(
-                userService.updatePassword(
-                        authUser.getUuid(),
-                        authService.encodePassword(request.newPassword())
-                ));
+        if (request.password().equals(request.newPassword())) {
+            throw new CommonException(UserErrorCode.SAME_AS_CURRENT_PASSWORD);
+        }
+        User updated = userService.updatePassword(authUser.getUuid(), authService.encodePassword(request.newPassword()));
+        emailService.sendPasswordChangedEmail(updated.getEmail(), updated.getName());
+        return new UserPasswordUpdateResult(
+                UserResponse.from(updated),
+                tokenService.createRefreshToken(updated.getUuid())
+        );
     }
 
     // 락 획득 후 확인(비밀번호 유무·남은 소셜 계정 수)이 동시 요청의 커밋을 보도록 READ COMMITTED (REPEATABLE READ 스냅샷 문제)

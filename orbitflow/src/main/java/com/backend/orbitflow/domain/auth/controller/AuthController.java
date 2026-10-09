@@ -1,6 +1,8 @@
 package com.backend.orbitflow.domain.auth.controller;
 
 import com.backend.orbitflow.domain.auth.dto.request.DormantReleaseRequest;
+import com.backend.orbitflow.domain.auth.dto.request.PasswordResetMailRequest;
+import com.backend.orbitflow.domain.auth.dto.request.PasswordResetRequest;
 import com.backend.orbitflow.domain.auth.dto.request.EmailVarifyRequest;
 import com.backend.orbitflow.domain.auth.dto.request.LoginRequest;
 import com.backend.orbitflow.domain.auth.dto.request.EmailCodeRequest;
@@ -67,6 +69,32 @@ public class AuthController {
                 .header(HttpHeaders.SET_COOKIE, token.refreshToken().toString())
                 .body(CommonResponse.success(
                         AuthSuccessCode.REISSUE_SUCCESS
+                ));
+    }
+
+    // 비밀번호 분실 : 재설정 링크 메일 발송 (가입 여부와 무관하게 같은 응답)
+    @PostMapping("/password/reset-mail")
+    public ResponseEntity<CommonResponse<Void>> requestPasswordReset(
+            @Valid @RequestBody PasswordResetMailRequest request
+    ) {
+        authFacade.requestPasswordReset(request);
+        return ResponseEntity
+                .status(HttpStatus.OK)
+                .body(CommonResponse.success(
+                        AuthSuccessCode.PASSWORD_RESET_MAIL_SENT
+                ));
+    }
+
+    // 재설정 링크(FE /reset-password?token=...)에서 새 비밀번호 저장
+    @PostMapping("/password/reset")
+    public ResponseEntity<CommonResponse<Void>> resetPassword(
+            @Valid @RequestBody PasswordResetRequest request
+    ) {
+        authFacade.resetPassword(request);
+        return ResponseEntity
+                .status(HttpStatus.OK)
+                .body(CommonResponse.success(
+                        AuthSuccessCode.PASSWORD_RESET_SUCCESS
                 ));
     }
 

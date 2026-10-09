@@ -12,6 +12,7 @@ import com.backend.orbitflow.domain.todo.error.TodoErrorCode;
 import com.backend.orbitflow.domain.todo.repository.TodoRepository;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.global.common.error.exception.CommonException;
+import com.backend.orbitflow.domain.notification.event.TodoAssignedEvent;
 import com.backend.orbitflow.domain.notification.event.TodoCompletedEvent;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -72,6 +73,9 @@ public class TodoServiceImpl implements TodoService {
         Todo todo = todoRepository.save(Todo.of(
                 category, parent, todoAssignee, type, name, startDate, endDate, remindBeforeMinutes, sortOrder
         ));
+        if (category.isTeamCategory() && !todoAssignee.getId().equals(actor.getId())) {
+            eventPublisher.publishEvent(new TodoAssignedEvent(todo.getId(), todoAssignee.getId(), actor.getId()));
+        }
         if (routine != null) {
             routineService.upsertRoutine(todo, routine.durationType(), routine.duration(), routine.daysOfWeek(), routine.repeatEndDate());
         }
@@ -144,7 +148,11 @@ public class TodoServiceImpl implements TodoService {
             throw new CommonException(TodoErrorCode.NOT_TEAM_TODO);
         }
         todoAuthorityService.checkAssign(todo.getCategory(), actor, assignee);
+        boolean changed = !todo.getAssignee().getId().equals(assignee.getId());
         todo.updateAssignee(assignee);
+        if (changed && !assignee.getId().equals(actor.getId())) {
+            eventPublisher.publishEvent(new TodoAssignedEvent(todo.getId(), assignee.getId(), actor.getId()));
+        }
         return TodoResponse.from(todo);
     }
 

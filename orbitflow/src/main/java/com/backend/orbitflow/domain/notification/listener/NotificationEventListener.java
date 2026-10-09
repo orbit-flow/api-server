@@ -144,6 +144,34 @@ public class NotificationEventListener {
                 }));
     }
 
+    // 팀 투두 배정 : 새 담당자에게
+    @Async
+    @TransactionalEventListener
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void handle(TodoAssignedEvent event) {
+        todoRepository.findWithAllById(event.todoId()).ifPresent(todo ->
+                userRepository.findById(event.assigneeId()).ifPresent(assignee -> {
+                    User actor = userRepository.findById(event.actorId()).orElse(null);
+                    String actorName = actor == null ? "팀 구성원" : actor.getName() + "님";
+                    notificationService.send(assignee, NotificationType.TODO_ASSIGNED, actor, todo.getId(), null,
+                            actorName + "이 '" + todo.getName() + "'을(를) 회원님에게 배정했습니다.");
+                }));
+    }
+
+    // 팀을 떠난 구성원의 투두 상속 : 상속받은 구성원에게 팀별로 1건 (행위자 없음)
+    // 회원 탈퇴 후 영구 삭제로 상속된 경우 leaver는 익명화된 상태("탈퇴한 사용자")
+    @Async
+    @TransactionalEventListener
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void handle(TodosInheritedEvent event) {
+        withTeamAndUser(event.teamId(), event.heirId(), (team, heir) -> {
+            String leaverName = userRepository.findById(event.leaverId()).map(User::getName).orElse("탈퇴한 사용자");
+            notificationService.send(heir, NotificationType.TODO_ASSIGNED, null, null, team.getUuid(),
+                    "'" + team.getName() + "' 팀을 떠난 " + leaverName + "님이 담당하던 투두 "
+                            + event.count() + "개가 회원님에게 배정되었습니다.");
+        });
+    }
+
     // ---------- 팀 ----------
 
     // 팀 가입·탈퇴·역할 변경은 변경 대상 사용자와 팀 관리자에게

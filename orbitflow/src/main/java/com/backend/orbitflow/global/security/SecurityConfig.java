@@ -58,6 +58,9 @@ public class SecurityConfig {
                 // WebSocket 핸드셰이크는 허용, 인증은 STOMP CONNECT 프레임에서 수행 (StompAuthInterceptor)
                 .requestMatchers("/ws/**").permitAll()
 
+                // actuator는 별도 관리 포트(management.server.port)에서만 열리며 접근 제어는 네트워크(NGINX IP 제한)에서 수행
+                .requestMatchers("/actuator/**").permitAll()
+
                 // 플랫폼 운영 관리 기능은 관리자만
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
                 .requestMatchers("/api/**").authenticated()

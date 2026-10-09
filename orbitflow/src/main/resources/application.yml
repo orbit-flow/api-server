@@ -39,7 +39,11 @@ spring:
             enable: true
 
 
+# 모니터링 : actuator는 외부에 공개하지 않는 별도 관리 포트에서만 제공
+# Prometheus는 내부망에서 이 포트를 직접 수집하고, 운영 화면(Grafana 등)은 NGINX에서 IP 제한
 management:
+  server:
+    port: ${MANAGEMENT_PORT:9090}
   endpoints:
     web:
       exposure:

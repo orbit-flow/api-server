@@ -139,16 +139,25 @@ public interface TodoRepository extends JpaRepository<Todo, Long> {
     @Query("update Todo t set t.category = :to where t.category = :from")
     void moveAllToCategory(@Param("from") Category from, @Param("to") Category to);
 
-    // 팀 탈퇴·추방 시 담당 미완료 팀 투두 상속
+    // 팀을 떠나는 구성원이 담당하던 미완료 팀 투두의 카테고리 (논리 삭제된 투두 포함, 복구 시 담당자가 필요하므로)
+    @Query("""
+            select distinct t.category from Todo t
+            where t.assignee = :assignee
+              and t.isCompleted = false
+              and t.category.team = :team
+            """)
+    List<Category> findCategoriesWithIncompleteTodos(@Param("team") Team team, @Param("assignee") User assignee);
+
+    // 팀을 떠나는 구성원의 미완료 투두 상속 (TeamTodoInheritanceService)
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("""
             update Todo t set t.assignee = :newAssignee
             where t.assignee = :oldAssignee
               and t.isCompleted = false
-              and t.category in (select c from Category c where c.team = :team)
+              and t.category = :category
             """)
-    void reassignIncompleteTeamTodos(
-            @Param("team") Team team,
+    int reassignIncompleteTodos(
+            @Param("category") Category category,
             @Param("oldAssignee") User oldAssignee,
             @Param("newAssignee") User newAssignee
     );

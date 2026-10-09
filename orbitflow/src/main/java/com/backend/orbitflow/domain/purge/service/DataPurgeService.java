@@ -1,6 +1,7 @@
 package com.backend.orbitflow.domain.purge.service;
 
-import com.backend.orbitflow.domain.team.entity.TeamMember;
+import com.backend.orbitflow.domain.team.entity.Team;
+import com.backend.orbitflow.domain.team.service.TeamTodoInheritanceService;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.global.util.S3Service;
 import com.backend.orbitflow.global.util.S3TransactionalFileManager;
@@ -44,13 +45,16 @@ public class DataPurgeService {
     private final TransactionTemplate transactionTemplate;
     private final S3Service s3Service;
     private final S3TransactionalFileManager s3FileManager;
+    private final TeamTodoInheritanceService teamTodoInheritanceService;
 
     public DataPurgeService(EntityManager em, PlatformTransactionManager transactionManager,
-                            S3Service s3Service, S3TransactionalFileManager s3FileManager) {
+                            S3Service s3Service, S3TransactionalFileManager s3FileManager,
+                            TeamTodoInheritanceService teamTodoInheritanceService) {
         this.em = em;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.s3Service = s3Service;
         this.s3FileManager = s3FileManager;
+        this.teamTodoInheritanceService = teamTodoInheritanceService;
     }
 
     public void purgeAll() {
@@ -88,18 +92,12 @@ public class DataPurgeService {
             files.add(user.getProfileImage());
         }
 
-        // 팀 소속 해제 : 담당 미완료 팀 투두는 팀 소유자가 상속 (팀 탈퇴와 동일), 완료 투두는 익명 사용자로 유지
-        List<TeamMember> memberships = em.createQuery(
-                        "select m from TeamMember m join fetch m.team where m.user = :user", TeamMember.class)
+        // 팀 소속 해제 : 담당 미완료 팀 투두는 팀 탈퇴와 같은 규칙으로 상속, 완료 투두는 익명 사용자로 유지
+        List<Team> teams = em.createQuery(
+                        "select m.team from TeamMember m where m.user = :user", Team.class)
                 .setParameter("user", user)
                 .getResultList();
-        for (TeamMember member : memberships) {
-            update("""
-                    update Todo t set t.assignee = :owner
-                    where t.assignee = :user and t.isCompleted = false
-                      and t.category in (select c from Category c where c.team = :team)
-                    """, Map.of("owner", member.getTeam().getOwner(), "user", user, "team", member.getTeam()));
-        }
+        teams.forEach(team -> teamTodoInheritanceService.inherit(team, user));
         update("delete from TeamMember m where m.user = :user", byUser);                 // 역할 부여·카테고리 권한 연쇄
         update("delete from TeamInvitation i where i.inviter = :user or i.invitee = :user", byUser);
 

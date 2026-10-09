@@ -31,4 +31,18 @@ public class RedisUtil {
     public boolean deleteValues(String key) {
         return Boolean.TRUE.equals(redisTemplate.delete(key));
     }
+
+    // 키가 없을 때만 저장 (SET NX), 저장했으면 true
+    public boolean setIfAbsent(String key, Object value, Duration timeout) {
+        return Boolean.TRUE.equals(redisTemplate.opsForValue().setIfAbsent(key, value, timeout));
+    }
+
+    // 조회와 삭제를 원자적으로 수행 (GETDEL) : 일회용 토큰의 동시 사용 방지
+    public <T> Optional<T> getAndDeleteValues(String key, Class<T> clazz) {
+        Object value = redisTemplate.opsForValue().getAndDelete(key);
+        if (value == null) {
+            return Optional.empty();
+        }
+        return Optional.of(clazz.cast(value));
+    }
 }

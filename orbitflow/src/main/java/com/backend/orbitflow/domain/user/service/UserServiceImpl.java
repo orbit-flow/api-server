@@ -20,6 +20,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 import java.time.LocalDateTime;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -55,6 +56,25 @@ public class UserServiceImpl implements UserService{
         return userRepository.findByEmail(email).orElseThrow(
                 () -> new CommonException(UserErrorCode.USER_NOT_FOUND)
         );
+    }
+
+    @Transactional(readOnly = true)
+    public Optional<User> findByEmail(String email) {
+        return userRepository.findByEmail(email);
+    }
+
+    // 비밀번호 분실 재설정 : 이메일 소유가 확인되었으므로 휴면 상태도 함께 해제
+    // 탈퇴 유예 중인 계정은 재설정 후 로그인하면 복구되고, 정지 계정은 재설정해도 로그인이 제한됨
+    public User resetPassword(String uuid, String encodedPassword) {
+        User user = userRepository.findByUuid(uuid).orElseThrow(
+                () -> new CommonException(UserErrorCode.USER_NOT_FOUND)
+        );
+        user.updatePassword(encodedPassword);
+        if (user.getStatus() == UserStatus.SLEEP) {
+            user.updateUserStatus(UserStatus.ACTIVE);
+            user.updateLastLoginAt();
+        }
+        return user;
     }
 
     public User register(String email, String password, String name, String varifyToken) {

@@ -50,7 +50,15 @@ public enum UserErrorCode implements ErrorCode{
     UN_VARIFIED_EMAIL(HttpStatus.BAD_REQUEST,
             "인증되지 않은 이메일 주소입니다.",
             "https://orbitflow.com/errors/un-varified-email",
-            "Un Varified Email");
+            "Un Varified Email"),
+    PASSWORD_NOT_SET(HttpStatus.BAD_REQUEST,
+            "비밀번호가 설정되지 않은 소셜 계정입니다. 비밀번호 설정을 먼저 진행해 주세요.",
+            "https://orbitflow.com/errors/password-not-set",
+            "Password Not Set"),
+    SAME_AS_CURRENT_PASSWORD(HttpStatus.BAD_REQUEST,
+            "새 비밀번호가 현재 비밀번호와 같습니다.",
+            "https://orbitflow.com/errors/same-as-current-password",
+            "Same As Current Password");
 
     private final HttpStatus httpStatus;
     private final String message;

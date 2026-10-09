@@ -40,7 +40,15 @@ public enum AuthErrorCode implements ErrorCode {
     NOT_DORMANT_ACCOUNT(HttpStatus.BAD_REQUEST,
             "휴면 계정이 아닙니다.",
             "https://orbitflow.com/errors/not-dormant-account",
-            "Not Dormant Account");
+            "Not Dormant Account"),
+    INVALID_PASSWORD_RESET_TOKEN(HttpStatus.BAD_REQUEST,
+            "비밀번호 재설정 링크가 만료되었거나 이미 사용되었습니다. 다시 요청해 주세요.",
+            "https://orbitflow.com/errors/invalid-password-reset-token",
+            "Invalid Password Reset Token"),
+    PASSWORD_RESET_TOO_MANY_REQUESTS(HttpStatus.TOO_MANY_REQUESTS,
+            "비밀번호 재설정 메일은 1분에 한 번만 요청할 수 있습니다. 잠시 후 다시 시도해 주세요.",
+            "https://orbitflow.com/errors/password-reset-too-many-requests",
+            "Password Reset Too Many Requests");
 
     private final HttpStatus httpStatus;
     private final String message;
