@@ -19,18 +19,15 @@ import com.backend.orbitflow.domain.todo.error.TodoErrorCode;
 import com.backend.orbitflow.domain.todo.repository.TodoRepository;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.global.common.error.exception.CommonException;
-import com.backend.orbitflow.global.util.S3Service;
+import com.backend.orbitflow.global.util.S3TransactionalFileManager;
 import com.backend.orbitflow.domain.notification.event.PostCreatedEvent;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.ArrayList;
@@ -41,7 +38,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
-@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -56,7 +52,7 @@ public class PostServiceImpl implements PostService {
     private final CategoryAuthorityService categoryAuthorityService;
     private final TeamAuthorityService teamAuthorityService;
     private final BlockService blockService;
-    private final S3Service s3Service;
+    private final S3TransactionalFileManager s3FileManager;
     private final CommentRepository commentRepository;
     private final PostLikeRepository postLikeRepository;
     private final ApplicationEventPublisher eventPublisher;
@@ -80,7 +76,7 @@ public class PostServiceImpl implements PostService {
         }
 
         Post post = postRepository.save(Post.of(todo, actor, content));
-        List<PostImage> postImages = saveImages(post, upload(files), 0);
+        List<PostImage> postImages = saveImages(post, s3FileManager.upload(IMAGE_DIR, files), 0);
         eventPublisher.publishEvent(new PostCreatedEvent(post.getId()));
         // TODO: 타임라인 구현 시 노출
         return PostResponse.of(post, postImages, 0, 0, false);
@@ -141,7 +137,7 @@ public class PostServiceImpl implements PostService {
                 .filter(image -> !keepImageUrls.contains(image.getImageUrl()))
                 .toList();
         postImageRepository.deleteAll(removed);
-        deleteFilesAfterCommit(removed.stream().map(PostImage::getImageUrl).toList());
+        s3FileManager.deleteAfterCommit(removed.stream().map(PostImage::getImageUrl).toList());
 
         List<PostImage> result = new ArrayList<>();
         for (int i = 0; i < keepImageUrls.size(); i++) {
@@ -149,7 +145,7 @@ public class PostServiceImpl implements PostService {
             kept.updateSortOrder(i);
             result.add(kept);
         }
-        result.addAll(saveImages(post, upload(files), keepImageUrls.size()));
+        result.addAll(saveImages(post, s3FileManager.upload(IMAGE_DIR, files), keepImageUrls.size()));
         post.updateContent(content);
         return toResponse(post, result, actor);
     }
@@ -166,7 +162,7 @@ public class PostServiceImpl implements PostService {
         commentRepository.deleteAllByPost(post);
         postImageRepository.deleteAllByPost(post);
         postRepository.deleteById(post.getId());
-        deleteFilesAfterCommit(imageUrls);
+        s3FileManager.deleteAfterCommit(imageUrls);
     }
 
     // 개인 투두는 카테고리 소유자, 팀 투두는 현재 담당자(팀 구성원)만 작성
@@ -266,56 +262,6 @@ public class PostServiceImpl implements PostService {
             images.add(PostImage.of(post, urls.get(i), startOrder + i));
         }
         return postImageRepository.saveAll(images);
-    }
-
-    // 업로드 후 트랜잭션이 롤백되면 업로드한 파일 삭제
-    private List<String> upload(List<MultipartFile> files) {
-        List<String> urls = new ArrayList<>();
-        try {
-            for (MultipartFile file : files) {
-                urls.add(s3Service.uploadFile(IMAGE_DIR, file));
-            }
-        } finally {
-            deleteFilesOnRollback(List.copyOf(urls));
-        }
-        return urls;
-    }
-
-    private void deleteFilesOnRollback(List<String> urls) {
-        if (urls.isEmpty()) {
-            return;
-        }
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCompletion(int status) {
-                if (status != STATUS_COMMITTED) {
-                    deleteFilesQuietly(urls);
-                }
-            }
-        });
-    }
-
-    // DB 반영이 확정된 뒤에만 S3 파일 삭제
-    private void deleteFilesAfterCommit(List<String> urls) {
-        if (urls.isEmpty()) {
-            return;
-        }
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                deleteFilesQuietly(urls);
-            }
-        });
-    }
-
-    private void deleteFilesQuietly(List<String> urls) {
-        for (String url : urls) {
-            try {
-                s3Service.deleteFile(url);
-            } catch (Exception e) {
-                log.warn("S3 파일 삭제 실패: {}", url, e);
-            }
-        }
     }
 
     private List<MultipartFile> nonEmpty(List<MultipartFile> files) {

@@ -6,6 +6,7 @@ import com.backend.orbitflow.domain.category.service.CategoryAuthorityService;
 import com.backend.orbitflow.domain.comment.repository.CommentRepository;
 import com.backend.orbitflow.domain.follow.entity.Follow;
 import com.backend.orbitflow.domain.follow.repository.FollowRepository;
+import com.backend.orbitflow.domain.item.repository.ItemRepository;
 import com.backend.orbitflow.domain.notification.enums.NotificationType;
 import com.backend.orbitflow.domain.notification.event.*;
 import com.backend.orbitflow.domain.notification.service.NotificationService;
@@ -50,6 +51,7 @@ public class NotificationEventListener {
     private final UserRepository userRepository;
     private final TeamAuthorityService teamAuthorityService;
     private final CategoryAuthorityService categoryAuthorityService;
+    private final ItemRepository itemRepository;
 
     // ---------- 팔로우 ----------
 
@@ -206,6 +208,28 @@ public class NotificationEventListener {
                                     + category.getVisibility() + "(으)로 변경되었습니다."
                     ));
                 });
+    }
+
+    // ---------- 포인트·아이템 ----------
+
+    // 포인트 적립·꾸밈 요소 구매 결과는 처리 완료 즉시 앱 내 알림으로 고지
+    @Async
+    @TransactionalEventListener
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void handle(PointEarnedEvent event) {
+        userRepository.findById(event.userId()).ifPresent(user ->
+                notificationService.send(user, NotificationType.POINT_EARNED, null, null, null,
+                        "출석 포인트 " + event.amount() + "P가 적립되었습니다. (잔액 " + event.balanceAfter() + "P)"));
+    }
+
+    @Async
+    @TransactionalEventListener
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void handle(ItemPurchasedEvent event) {
+        userRepository.findById(event.userId()).ifPresent(user ->
+                itemRepository.findById(event.itemId()).ifPresent(item ->
+                        notificationService.send(user, NotificationType.ITEM_PURCHASED, null, item.getId(), null,
+                                "'" + item.getName() + "'을(를) " + event.price() + "P에 구매했습니다. (잔액 " + event.balanceAfter() + "P)")));
     }
 
     // 팀 관리자 : 소유자 또는 MANAGE_TEAM 권한 보유자 (변경 대상 본인 제외)

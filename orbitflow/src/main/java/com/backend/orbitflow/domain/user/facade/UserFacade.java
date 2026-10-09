@@ -1,6 +1,7 @@
 package com.backend.orbitflow.domain.user.facade;
 
 import com.backend.orbitflow.domain.auth.service.AuthService;
+import com.backend.orbitflow.domain.avatar.service.AvatarService;
 import com.backend.orbitflow.domain.user.dto.request.*;
 import com.backend.orbitflow.domain.user.entity.User;
 import org.springframework.stereotype.Component;
@@ -18,10 +19,15 @@ public class UserFacade {
 
     private final UserService userService;
     private final AuthService authService;
+    private final AvatarService avatarService;
 
+    // 가입 시 기본 아바타와 초기 포인트 지급
+    @Transactional
     public UserResponse signup(UserSignupRequest request) {
         String encodedPassword = authService.encodePassword(request.password());
-        return UserResponse.from(userService.register(request.email(), encodedPassword, request.name(), request.emailVarifyToken()));
+        User user = userService.register(request.email(), encodedPassword, request.name(), request.emailVarifyToken());
+        avatarService.createAvatar(user);
+        return UserResponse.from(user);
     }
 
     public UserResponse getUser(AuthUser authUser) {
