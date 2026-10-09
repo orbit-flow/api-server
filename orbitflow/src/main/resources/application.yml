@@ -7,6 +7,12 @@ spring:
   jackson:
     default-property-inclusion: non_null
 
+  # 게시글 사진 : 1장당 10MB(S3Service 검증과 동일), 최대 3장
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 31MB
+
   jpa:
     open-in-view: false
     hibernate:

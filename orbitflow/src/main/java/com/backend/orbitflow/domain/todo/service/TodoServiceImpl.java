@@ -170,7 +170,7 @@ public class TodoServiceImpl implements TodoService {
         if (!todo.isChild()) {
             todoRepository.softDeleteChildren(todo, todo.getDeletedAt());
         }
-        // TODO: 게시글 도메인 구현 후 연결된 게시글에 투두 삭제 표시
+        // 연결된 게시글은 유지되며 PostResponse.todo.deleted로 삭제 여부 표시
     }
 
     @Transactional(readOnly = true)
