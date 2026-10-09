@@ -39,7 +39,7 @@ public class AuthFacade{
         tokenService.addBlacklist(accessToken);
     }
 
-    public TokenResponse reissueToken(String refreshToken) {;
+    public TokenResponse reissueToken(String refreshToken) {
         String uuid = tokenService.getUuidFromRefreshToken(refreshToken);
         User user = userService.getByUuid(uuid);
         return TokenResponse.of(

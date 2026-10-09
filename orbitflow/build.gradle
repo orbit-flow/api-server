@@ -62,7 +62,6 @@ dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-websocket'
     testImplementation 'org.springframework.boot:spring-boot-starter-webmvc-test'
     testImplementation 'org.springframework.boot:spring-boot-starter-websocket-test'
-    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.6.0'
 
 // Prometheus
     runtimeOnly 'io.micrometer:micrometer-registry-prometheus'
@@ -76,7 +75,14 @@ dependencies {
     implementation 'io.awspring.cloud:spring-cloud-aws-starter-s3:4.1.1'
 
 // Swagger
-    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui'
+    // springdoc 3.x : Spring Boot 4 대응 (2.x는 Boot 3 전용)
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:3.1.1'
+
+// Jackson : Spring Boot 4.1.1 BOM 기본 버전(2.21.5 / 3.1.5) CVE 패치
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.21.7'
+    implementation 'com.fasterxml.jackson.core:jackson-core:2.21.7'
+    implementation 'tools.jackson.core:jackson-databind:3.1.7'
+    implementation 'tools.jackson.core:jackson-core:3.1.7'
 
 // Test
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
