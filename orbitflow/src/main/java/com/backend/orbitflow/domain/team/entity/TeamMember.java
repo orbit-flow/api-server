@@ -39,4 +39,9 @@ public class TeamMember extends BaseEntity {
                 null, team, user, null, null
         );
     }
+
+    public void updateProfile(String nickname, String bio) {
+        this.nickname = nickname;
+        this.bio = bio;
+    }
 }

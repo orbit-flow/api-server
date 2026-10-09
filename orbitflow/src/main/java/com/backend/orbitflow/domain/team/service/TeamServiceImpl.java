@@ -3,9 +3,14 @@ package com.backend.orbitflow.domain.team.service;
 import com.backend.orbitflow.domain.team.dto.response.TeamResponse;
 import com.backend.orbitflow.domain.team.entity.Team;
 import com.backend.orbitflow.domain.team.entity.TeamMember;
+import com.backend.orbitflow.domain.team.entity.TeamRole;
+import com.backend.orbitflow.domain.team.enums.TeamPermission;
 import com.backend.orbitflow.domain.team.error.TeamErrorCode;
+import com.backend.orbitflow.domain.team.repository.TeamInvitationRepository;
 import com.backend.orbitflow.domain.team.repository.TeamMemberRepository;
+import com.backend.orbitflow.domain.team.repository.TeamMemberRoleRepository;
 import com.backend.orbitflow.domain.team.repository.TeamRepository;
+import com.backend.orbitflow.domain.team.repository.TeamRoleRepository;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.global.common.error.exception.CommonException;
 import lombok.RequiredArgsConstructor;
@@ -23,8 +28,19 @@ public class TeamServiceImpl implements TeamService {
 
     private final TeamRepository teamRepository;
     private final TeamMemberRepository teamMemberRepository;
+    private final TeamRoleRepository teamRoleRepository;
+    private final TeamMemberRoleRepository teamMemberRoleRepository;
+    private final TeamInvitationRepository teamInvitationRepository;
+    private final TeamAuthorityService teamAuthorityService;
 
-    // 생성자는 팀 소유자이자 첫 구성원
+    @Transactional(readOnly = true)
+    public Team getActiveTeam(String uuid) {
+        return teamRepository.findByUuidAndDeletedAtIsNull(uuid).orElseThrow(
+                () -> new CommonException(TeamErrorCode.TEAM_NOT_FOUND)
+        );
+    }
+
+    // 생성자는 팀 소유자이자 첫 구성원, 초대 수락 시 부여할 기본 역할을 함께 생성
     public Team createTeam(User owner, String name, String icon) {
         Team team = teamRepository.save(Team.of(
                 UUID.randomUUID().toString().replace("-", ""),
@@ -33,6 +49,7 @@ public class TeamServiceImpl implements TeamService {
                 owner
         ));
         teamMemberRepository.save(TeamMember.of(team, owner));
+        teamRoleRepository.save(TeamRole.defaultRole(team));
         return team;
     }
 
@@ -49,17 +66,20 @@ public class TeamServiceImpl implements TeamService {
         );
     }
 
-    // TODO: 역할 구현 후 MANAGE_TEAM 권한 보유자도 수정 가능하게 확장
+    // 소유자 또는 MANAGE_TEAM 권한 보유자(팀 관리자)
     public void updateTeam(User user, String uuid, String name, String icon) {
-        Team team = getOwnedTeam(user, uuid);
+        Team team = getActiveTeam(uuid);
+        teamAuthorityService.checkPermission(team, user, TeamPermission.MANAGE_TEAM);
         team.updateTeamInfo(name, icon);
     }
 
-    // 논리적 삭제 후 30일간 보관, 모든 구성원의 소속 해제
+    // 논리적 삭제 후 30일간 보관, 모든 구성원의 소속 해제 및 대기 중인 초대 취소 (역할은 복구를 위해 유지)
     public void deleteTeam(User user, String uuid) {
         Team team = getOwnedTeam(user, uuid);
         team.delete();
+        teamMemberRoleRepository.deleteAllByTeam(team);
         teamMemberRepository.deleteAllByTeam(team);
+        teamInvitationRepository.cancelAllPendingByTeam(team);
     }
 
     @Transactional(readOnly = true)
@@ -80,9 +100,7 @@ public class TeamServiceImpl implements TeamService {
     }
 
     private Team getOwnedTeam(User user, String uuid) {
-        Team team = teamRepository.findByUuidAndDeletedAtIsNull(uuid).orElseThrow(
-                () -> new CommonException(TeamErrorCode.TEAM_NOT_FOUND)
-        );
+        Team team = getActiveTeam(uuid);
         if (!team.isOwner(user)) {
             throw new CommonException(TeamErrorCode.NOT_TEAM_OWNER);
         }

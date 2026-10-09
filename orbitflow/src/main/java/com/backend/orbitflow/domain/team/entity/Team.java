@@ -43,6 +43,10 @@ public class Team extends SoftDeleteEntity {
         this.icon = icon;
     }
 
+    public void transferOwner(User newOwner) {
+        this.owner = newOwner;
+    }
+
     public boolean isOwner(User user) {
         return this.owner.getId().equals(user.getId());
     }

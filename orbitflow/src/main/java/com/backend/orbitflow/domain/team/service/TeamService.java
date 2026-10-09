@@ -10,6 +10,7 @@ public interface TeamService {
 
     int RETENTION_DAYS = 30;
 
+    Team getActiveTeam(String uuid);
     Team createTeam(User owner, String name, String icon);
     List<TeamResponse> getMyTeams(User user);
     TeamResponse getMyTeam(User user, String uuid);
