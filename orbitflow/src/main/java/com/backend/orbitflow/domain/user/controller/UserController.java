@@ -21,6 +21,10 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import com.backend.orbitflow.domain.user.dto.response.OAuthAccountResponse;
+import com.backend.orbitflow.domain.user.enums.Provider;
+import java.util.List;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.http.MediaType;
 import org.springframework.web.multipart.MultipartFile;
@@ -110,6 +114,46 @@ public class UserController {
             ));
     }
     
+    // 소셜 가입자의 최초 비밀번호 설정 (설정 후 소셜 연결 해제 가능)
+    @PostMapping("/me/password")
+    public ResponseEntity<CommonResponse<UserResponse>> setInitialPassword(
+        @AuthenticationPrincipal AuthUser authUser,
+        @Valid @RequestBody UserPasswordSetRequest request
+    ) {
+        return ResponseEntity
+            .status(HttpStatus.OK)
+            .body(CommonResponse.success(
+                UserSuccessCode.USER_PASSWORD_SET,
+                userFacade.setInitialPassword(authUser, request)
+            ));
+    }
+
+    @GetMapping("/me/oauth-accounts")
+    public ResponseEntity<CommonResponse<List<OAuthAccountResponse>>> getOAuthAccounts(
+        @AuthenticationPrincipal AuthUser authUser
+    ) {
+        return ResponseEntity
+            .status(HttpStatus.OK)
+            .body(CommonResponse.success(
+                UserSuccessCode.GET_OAUTH_ACCOUNTS,
+                userFacade.getOAuthAccounts(authUser)
+            ));
+    }
+
+    // 비밀번호가 설정되어 있거나 다른 소셜 계정이 남아 있을 때만 해제 가능
+    @DeleteMapping("/me/oauth-accounts/{provider}")
+    public ResponseEntity<CommonResponse<Void>> unlinkOAuthAccount(
+        @AuthenticationPrincipal AuthUser authUser,
+        @PathVariable Provider provider
+    ) {
+        userFacade.unlinkOAuthAccount(authUser, provider);
+        return ResponseEntity
+            .status(HttpStatus.OK)
+            .body(CommonResponse.success(
+                UserSuccessCode.OAUTH_UNLINK
+            ));
+    }
+
     @PutMapping("/me/password")
     public ResponseEntity<CommonResponse<UserResponse>> updatePassword(
         @AuthenticationPrincipal AuthUser authUser,

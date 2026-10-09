@@ -15,6 +15,8 @@ public interface TeamRepository extends JpaRepository<Team, Long> {
 
     Optional<Team> findByUuidAndDeletedAtIsNull(String uuid);
 
+    boolean existsByOwnerAndDeletedAtIsNull(User owner);
+
     // 복구 가능 기간(deletedAt > threshold) 내의 삭제된 팀
     Optional<Team> findByUuidAndDeletedAtAfter(String uuid, LocalDateTime threshold);
 

@@ -13,6 +13,8 @@ public interface UserService {
     String updateProfileImage(String uuid, String profileImage);
     User updateEmail(String uuid, String email, String varifyToken);
     User updatePassword(String uuid, String password);
+    User lockUser(Long userId);
+    User setInitialPassword(String uuid, String encodedPassword);
     User updateChatInviteSetting(String uuid, boolean allowNonFollowChatInvite);
     void deleteUser(String uuid);
     void restoreIfWithdrawn(User user);

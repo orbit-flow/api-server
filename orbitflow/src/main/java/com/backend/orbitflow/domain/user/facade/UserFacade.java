@@ -2,6 +2,10 @@ package com.backend.orbitflow.domain.user.facade;
 
 import com.backend.orbitflow.domain.auth.service.AuthService;
 import com.backend.orbitflow.domain.auth.service.TokenService;
+import com.backend.orbitflow.domain.team.repository.TeamRepository;
+import com.backend.orbitflow.domain.user.dto.response.OAuthAccountResponse;
+import com.backend.orbitflow.domain.user.enums.Provider;
+import com.backend.orbitflow.domain.user.service.OAuthService;
 import com.backend.orbitflow.domain.user.dto.request.*;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.domain.user.error.UserErrorCode;
@@ -17,6 +21,7 @@ import lombok.RequiredArgsConstructor;
 import com.backend.orbitflow.domain.user.dto.response.UserResponse;
 import com.backend.orbitflow.domain.user.service.UserService;
 import com.backend.orbitflow.global.security.AuthUser;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
@@ -35,6 +40,8 @@ public class UserFacade {
     private final EmailService emailService;
     private final S3Service s3Service;
     private final S3TransactionalFileManager s3FileManager;
+    private final OAuthService oAuthService;
+    private final TeamRepository teamRepository;
 
     // 기본 아바타·초기 포인트는 가입 트랜잭션에서 함께 생성 (UserRegisteredEvent)
     public UserResponse signup(UserSignupRequest request) {
@@ -86,6 +93,27 @@ public class UserFacade {
                 ));
     }
 
+    // 락 획득 후 확인(비밀번호 유무·남은 소셜 계정 수)이 동시 요청의 커밋을 보도록 READ COMMITTED (REPEATABLE READ 스냅샷 문제)
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public UserResponse setInitialPassword(AuthUser authUser, UserPasswordSetRequest request) {
+        return UserResponse.from(userService.setInitialPassword(
+                authUser.getUuid(), authService.encodePassword(request.newPassword())
+        ));
+    }
+
+    @Transactional(readOnly = true)
+    public List<OAuthAccountResponse> getOAuthAccounts(AuthUser authUser) {
+        return oAuthService.getLinkedAccounts(userService.getByUuid(authUser.getUuid())).stream()
+                .map(OAuthAccountResponse::from)
+                .toList();
+    }
+
+    // 락 획득 후 확인(비밀번호 유무·남은 소셜 계정 수)이 동시 요청의 커밋을 보도록 READ COMMITTED (REPEATABLE READ 스냅샷 문제)
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public void unlinkOAuthAccount(AuthUser authUser, Provider provider) {
+        oAuthService.unlink(userService.getByUuid(authUser.getUuid()), provider);
+    }
+
     @Transactional
     public UserResponse updateChatInviteSetting(AuthUser authUser, UserChatInviteRequest request) {
         return UserResponse.from(userService.updateChatInviteSetting(authUser.getUuid(), request.allowNonFollowChatInvite()));
@@ -96,6 +124,10 @@ public class UserFacade {
     // 탈퇴 즉시 세션 종료(refresh token 폐기), 결과는 가입 이메일로 고지 (메일 실패는 탈퇴 결과에 영향 없음)
     public void deleteUser(AuthUser authUser, UserDeleteRequest request) {
         User user = userService.getByUuid(authUser.getUuid());
+        // 팀 소유자는 소유자 직함을 넘기거나 팀을 삭제한 뒤 탈퇴 (팀 탈퇴 정책과 동일)
+        if (teamRepository.existsByOwnerAndDeletedAtIsNull(user)) {
+            throw new CommonException(UserErrorCode.TEAM_OWNER_CANNOT_WITHDRAW);
+        }
         if (user.getPassword() != null) {
             if (request.password() == null) {
                 throw new CommonException(UserErrorCode.PASSWORD_REQUIRED);

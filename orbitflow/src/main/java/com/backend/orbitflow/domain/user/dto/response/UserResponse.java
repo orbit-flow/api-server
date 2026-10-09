@@ -15,6 +15,8 @@ public record UserResponse(
     UserStatus status,
     boolean isPrivate,
     boolean allowNonFollowChatInvite,
+    // false면 소셜 로그인 전용 계정 (비밀번호 설정 가능)
+    boolean hasPassword,
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
     LocalDateTime createdAt
 ) {
@@ -28,6 +30,7 @@ public record UserResponse(
             user.getStatus(),
             user.isPrivate(),
             user.isAllowNonFollowChatInvite(),
+            user.getPassword() != null,
             user.getCreatedAt()
         );
     }

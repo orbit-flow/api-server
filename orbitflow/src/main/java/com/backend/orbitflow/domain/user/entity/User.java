@@ -103,6 +103,15 @@ public class User extends SoftDeleteEntity{
         this.allowNonFollowChatInvite = allow;
     }
 
+    // 탈퇴 후 30일 경과 시 식별정보 파기 (결제·포인트 거래 등 보관 기록의 참조를 위해 행은 유지)
+    public void anonymize(String anonymizedEmail) {
+        this.email = anonymizedEmail;
+        this.name = "탈퇴한 사용자";
+        this.password = null;
+        this.introduce = null;
+        this.profileImage = null;
+    }
+
     public void updatePassword(String password) {
         this.password = password;
     }

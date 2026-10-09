@@ -8,6 +8,7 @@ import com.backend.orbitflow.domain.user.error.UserErrorCode;
 import com.backend.orbitflow.global.common.error.exception.CommonException;
 import com.backend.orbitflow.global.util.RedisUtil;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.backend.orbitflow.domain.user.repository.UserRepository;
@@ -16,6 +17,8 @@ import com.backend.orbitflow.domain.user.event.UserRegisteredEvent;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
@@ -30,6 +33,7 @@ public class UserServiceImpl implements UserService{
     private final UserRepository userRepository;
     private final RedisUtil redisUtil;
     private final ApplicationEventPublisher eventPublisher;
+    private final EntityManager entityManager;
 
     @Transactional(readOnly = true)
     public User getByUuid(String uuid) {
@@ -121,6 +125,28 @@ public class UserServiceImpl implements UserService{
     public User updateChatInviteSetting(String uuid, boolean allowNonFollowChatInvite) {
         User user = getByUuid(uuid);
         user.updateAllowNonFollowChatInvite(allowNonFollowChatInvite);
+        return user;
+    }
+
+    // 로그인 수단 변경(비밀번호 설정·소셜 연결 해제)을 사용자 단위로 직렬화 : 동시 해제로 로그인 수단이 모두 사라지는 것 방지
+    // 이미 영속성 컨텍스트에 있던 오래된 상태를 쓰지 않도록 락과 함께 최신 상태로 갱신
+    public User lockUser(Long userId) {
+        User user = entityManager.find(User.class, userId);
+        if (user == null) {
+            throw new CommonException(UserErrorCode.USER_NOT_FOUND);
+        }
+        entityManager.refresh(user, LockModeType.PESSIMISTIC_WRITE);
+        return user;
+    }
+
+    // 소셜 가입자(비밀번호 없음)만 최초 설정 가능, 사용자 행 락으로 소셜 연결 해제와 직렬화
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public User setInitialPassword(String uuid, String encodedPassword) {
+        User user = lockUser(getByUuid(uuid).getId());
+        if (user.getPassword() != null) {
+            throw new CommonException(UserErrorCode.PASSWORD_ALREADY_SET);
+        }
+        user.updatePassword(encodedPassword);
         return user;
     }
 
