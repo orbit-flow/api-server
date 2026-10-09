@@ -20,6 +20,11 @@ import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import com.backend.orbitflow.domain.category.dto.CategoryGrant;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 // 허용되지 않은 조회는 진입 경로와 무관하게 거부
 @Service
@@ -37,6 +42,35 @@ public class CategoryAuthorityServiceImpl implements CategoryAuthorityService {
             return filterViewableTeam(category.getTeam(), viewer, List.of(category)).size() == 1;
         }
         return filterViewablePersonal(category.getUser(), viewer, List.of(category)).size() == 1;
+    }
+
+    // 한 팀의 여러 구성원 × 여러 카테고리 판정용 (팀 단위 쿼리 3회)
+    public TeamCategoryAccess teamAccess(Team team) {
+        Map<Long, Set<Long>> memberIds = new HashMap<>();
+        Map<Long, Set<Long>> roleIds = new HashMap<>();
+        for (CategoryGrant grant : categoryPermissionRepository.findGrantsByTeam(team)) {
+            if (grant.memberId() != null) {
+                memberIds.computeIfAbsent(grant.categoryId(), key -> new HashSet<>()).add(grant.memberId());
+            }
+            if (grant.roleId() != null) {
+                roleIds.computeIfAbsent(grant.categoryId(), key -> new HashSet<>()).add(grant.roleId());
+            }
+        }
+        return new TeamCategoryAccess(teamAuthorityService.snapshot(team), memberIds, roleIds);
+    }
+
+    // 한 사용자 × 여러 팀의 카테고리 판정용 (사용자 단위 쿼리 3회)
+    public ViewerTeamScope viewerScope(User viewer) {
+        Map<Long, Integer> masks = teamAuthorityService.getPermissionMasksByTeam(viewer);
+        Set<Long> managerTeamIds = masks.entrySet().stream()
+                .filter(entry -> TeamPermission.MANAGE_CATEGORIES.isGranted(entry.getValue()))
+                .map(Map.Entry::getKey)
+                .collect(Collectors.toSet());
+        return new ViewerTeamScope(
+                masks.keySet(),
+                managerTeamIds,
+                categoryPermissionRepository.findAllowedCategoryIdsByUser(viewer)
+        );
     }
 
     public void checkView(Category category, User viewer) {

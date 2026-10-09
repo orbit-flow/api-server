@@ -10,6 +10,8 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.Collection;
 import java.util.List;
+import com.backend.orbitflow.domain.team.dto.TeamMaskRow;
+import com.backend.orbitflow.domain.user.entity.User;
 
 public interface TeamMemberRoleRepository extends JpaRepository<TeamMemberRole, Long> {
 
@@ -21,6 +23,16 @@ public interface TeamMemberRoleRepository extends JpaRepository<TeamMemberRole, 
 
     @Query("select mr from TeamMemberRole mr join fetch mr.role where mr.member in :members")
     List<TeamMemberRole> findAllWithRoleByMemberIn(@Param("members") Collection<TeamMember> members);
+
+    // 사용자의 모든 소속 팀의 역할 권한 (팀별 합산은 호출 측)
+    @Query("""
+            select new com.backend.orbitflow.domain.team.dto.TeamMaskRow(m.team.id, r.permissionsMask)
+            from TeamMemberRole mr
+            join mr.member m
+            join mr.role r
+            where m.user = :user
+            """)
+    List<TeamMaskRow> findTeamMasksByUser(@Param("user") User user);
 
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("delete from TeamMemberRole mr where mr.member in (select m from TeamMember m where m.team = :team)")

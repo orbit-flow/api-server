@@ -11,6 +11,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.Optional;
 import java.util.Set;
+import java.util.Collection;
 
 public interface BlockRepository extends JpaRepository<Block, Long> {
 
@@ -47,4 +48,13 @@ public interface BlockRepository extends JpaRepository<Block, Long> {
     // 내가 차단한 사용자 (다수 참여 대화에서 차단한 사용자의 메시지 가림 표시용)
     @Query("select b.blockee.id from Block b where b.blocker = :blocker")
     Set<Long> findBlockeeIds(@Param("blocker") User blocker);
+
+    // userIds 중 user와 어느 방향으로든 차단 관계인 사용자 id
+    @Query("""
+            select case when b.blocker = :user then b.blockee.id else b.blocker.id end
+            from Block b
+            where (b.blocker = :user and b.blockee.id in :userIds)
+               or (b.blockee = :user and b.blocker.id in :userIds)
+            """)
+    Set<Long> findBlockedUserIdsAmong(@Param("user") User user, @Param("userIds") Collection<Long> userIds);
 }

@@ -5,6 +5,7 @@ import com.backend.orbitflow.domain.notification.enums.NotificationType;
 import com.backend.orbitflow.domain.user.entity.User;
 import org.springframework.data.domain.Page;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import java.util.Collection;
 
 public interface NotificationService {
 
@@ -12,6 +13,7 @@ public interface NotificationService {
     int RETENTION_DAYS = 30;
 
     void send(User receiver, NotificationType type, User actor, Long targetId, String targetUuid, String content);
+    void sendAll(Collection<User> receivers, NotificationType type, User actor, Long targetId, String targetUuid, String content);
     SseEmitter subscribe(User user);
     Page<NotificationResponse> getNotifications(User user, boolean unreadOnly, int page, int size);
     long countUnread(User user);

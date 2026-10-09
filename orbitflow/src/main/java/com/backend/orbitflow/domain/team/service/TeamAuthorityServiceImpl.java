@@ -13,6 +13,14 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
+import com.backend.orbitflow.domain.team.dto.TeamMaskRow;
+import com.backend.orbitflow.domain.team.dto.TeamMembershipRow;
+import com.backend.orbitflow.domain.team.entity.TeamMemberRole;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -40,6 +48,38 @@ public class TeamAuthorityServiceImpl implements TeamAuthorityService {
         }
         return teamMemberRoleRepository.findPermissionMasksByMember(member).stream()
                 .reduce(0, (a, b) -> a | b);
+    }
+
+    // 팀 전체 구성원의 권한을 쿼리 2회로 계산 (구성원마다 getPermissionMask를 호출하지 않도록)
+    public TeamPermissionSnapshot snapshot(Team team) {
+        List<TeamMember> members = teamMemberRepository.findAllWithUserByTeam(team);
+        Map<Long, Integer> masks = new HashMap<>();
+        Map<Long, Set<Long>> roleIds = new HashMap<>();
+        if (!members.isEmpty()) {
+            for (TeamMemberRole memberRole : teamMemberRoleRepository.findAllWithRoleByMemberIn(members)) {
+                Long memberId = memberRole.getMember().getId();
+                masks.merge(memberId, memberRole.getRole().getPermissionsMask(), (a, b) -> a | b);
+                roleIds.computeIfAbsent(memberId, key -> new HashSet<>()).add(memberRole.getRole().getId());
+            }
+        }
+        for (TeamMember member : members) {
+            if (team.isOwner(member.getUser())) {
+                masks.put(member.getId(), TeamPermission.all());
+            }
+        }
+        return new TeamPermissionSnapshot(team, members, masks, roleIds);
+    }
+
+    // 사용자가 소속된 모든 팀의 권한 (팀 id → mask), 쿼리 2회
+    public Map<Long, Integer> getPermissionMasksByTeam(User user) {
+        Map<Long, Integer> masks = new HashMap<>();
+        for (TeamMembershipRow membership : teamMemberRepository.findMembershipsByUser(user)) {
+            masks.put(membership.teamId(), membership.ownerId().equals(user.getId()) ? TeamPermission.all() : 0);
+        }
+        for (TeamMaskRow row : teamMemberRoleRepository.findTeamMasksByUser(user)) {
+            masks.computeIfPresent(row.teamId(), (teamId, mask) -> mask | row.mask());
+        }
+        return masks;
     }
 
     public TeamMember checkPermission(Team team, User user, TeamPermission permission) {

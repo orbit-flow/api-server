@@ -2,6 +2,7 @@ package com.backend.orbitflow.domain.todo.entity;
 
 import com.backend.orbitflow.domain.category.entity.Category;
 import com.backend.orbitflow.domain.todo.enums.TodoType;
+import com.backend.orbitflow.domain.todo.listener.TodoReminderListener;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.global.common.entity.SoftDeleteEntity;
 import jakarta.persistence.*;
@@ -25,6 +26,8 @@ import java.time.LocalDateTime;
         uniqueConstraints = @UniqueConstraint(columnNames = {"routine_id", "start_date"}),
         // 타임라인 투두 완료 활동 조회
         indexes = @Index(columnList = "assignee_id, completed_at"))
+// 저장·수정 시 리마인드 예약 목록(Redis) 갱신
+@EntityListeners(TodoReminderListener.class)
 public class Todo extends SoftDeleteEntity {
 
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -126,5 +129,13 @@ public class Todo extends SoftDeleteEntity {
 
     public boolean isDeleted() {
         return getDeletedAt() != null;
+    }
+
+    // 리마인드 발송 시각 (컬럼 아님) : 리마인드 미설정·완료·삭제된 투두는 null
+    public LocalDateTime getRemindAt() {
+        if (remindBeforeMinutes == null || isCompleted || isDeleted()) {
+            return null;
+        }
+        return startDate.minusMinutes(remindBeforeMinutes);
     }
 }

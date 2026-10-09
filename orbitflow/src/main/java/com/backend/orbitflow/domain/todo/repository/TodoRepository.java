@@ -94,20 +94,34 @@ public interface TodoRepository extends JpaRepository<Todo, Long> {
             Pageable pageable
     );
 
-    // 리마인드 후보 : 미완료·미삭제이고 리마인드가 설정된, 시작 시각이 (from, to] 구간인 투두
+    // 리마인드 발송 대상 : 예약 목록(Redis)에서 꺼낸 투두를 발송 정보(담당자·카테고리 소유자·팀)와 함께 조회
     @Query("""
             select t from Todo t
             join fetch t.assignee
             join fetch t.category c
             left join fetch c.user
             left join fetch c.team
+            where t.id in :ids
+            """)
+    List<Todo> findAllForReminderByIdIn(@Param("ids") Collection<Long> ids);
+
+    // 서버 시작 시 리마인드 예약 목록 재적재용 : 아직 시작하지 않은, 리마인드가 설정된 미완료·미삭제 투두
+    // 미리 생성된 반복 회차(최대 1개월 앞)까지 포함하며, 리마인드 시각이 지난 항목은 호출 측에서 제외
+    @Query("""
+            select t.id as id, t.startDate as startDate, t.remindBeforeMinutes as remindBeforeMinutes
+            from Todo t
             where t.remindBeforeMinutes is not null
               and t.isCompleted = false
               and t.deletedAt is null
               and t.startDate > :from
-              and t.startDate <= :to
             """)
-    List<Todo> findRemindCandidates(@Param("from") LocalDateTime from, @Param("to") LocalDateTime to);
+    List<ReminderTarget> findUpcomingReminders(@Param("from") LocalDateTime from);
+
+    interface ReminderTarget {
+        Long getId();
+        LocalDateTime getStartDate();
+        Integer getRemindBeforeMinutes();
+    }
 
     List<Todo> findAllByParentTodoAndDeletedAtIsNullOrderBySortOrderAsc(Todo parentTodo);
 

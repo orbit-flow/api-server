@@ -21,6 +21,9 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
+import java.util.List;
+import java.util.Set;
 
 @Slf4j
 @Service
@@ -51,6 +54,33 @@ public class NotificationServiceImpl implements NotificationService {
         String uuid = receiver.getUuid();
         // 저장이 확정된 뒤 실시간 전송
         afterCommit(() -> emitterRepository.send(uuid, EVENT_NAME, response));
+    }
+
+    // 여러 수신자에게 같은 알림 : 차단 관계를 수신자 묶음 단위로 한 번에 확인 (수신자마다 조회하지 않음)
+    public void sendAll(Collection<User> receivers, NotificationType type, User actor, Long targetId, String targetUuid, String content) {
+        List<User> targets = receivers.stream()
+                .filter(receiver -> receiver.getDeletedAt() == null && receiver.getStatus() != UserStatus.BANNED)
+                .filter(receiver -> actor == null || !actor.getId().equals(receiver.getId()))
+                .toList();
+        if (targets.isEmpty()) {
+            return;
+        }
+        Set<Long> blocked = actor == null
+                ? Set.of()
+                : blockService.findBlockedUserIdsAmong(actor, targets.stream().map(User::getId).toList());
+        List<Notification> notifications = notificationRepository.saveAll(targets.stream()
+                .filter(receiver -> !blocked.contains(receiver.getId()))
+                .map(receiver -> Notification.of(receiver, type, actor, targetId, targetUuid, content))
+                .toList());
+        List<Runnable> pushes = notifications.stream()
+                .map(notification -> {
+                    String uuid = notification.getUser().getUuid();
+                    NotificationResponse response = NotificationResponse.from(notification);
+                    return (Runnable) () -> emitterRepository.send(uuid, EVENT_NAME, response);
+                })
+                .toList();
+        // 저장이 확정된 뒤 실시간 전송
+        afterCommit(() -> pushes.forEach(Runnable::run));
     }
 
     public SseEmitter subscribe(User user) {

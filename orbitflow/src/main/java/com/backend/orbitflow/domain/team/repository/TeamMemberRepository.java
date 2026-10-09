@@ -10,6 +10,7 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
+import com.backend.orbitflow.domain.team.dto.TeamMembershipRow;
 
 public interface TeamMemberRepository extends JpaRepository<TeamMember, Long> {
 
@@ -19,6 +20,15 @@ public interface TeamMemberRepository extends JpaRepository<TeamMember, Long> {
 
     @Query("select m from TeamMember m join fetch m.user where m.team = :team order by m.createdAt asc")
     List<TeamMember> findAllWithUserByTeam(@Param("team") Team team);
+
+    @Query("""
+            select new com.backend.orbitflow.domain.team.dto.TeamMembershipRow(t.id, t.owner.id)
+            from TeamMember m
+            join m.team t
+            where m.user = :user
+              and t.deletedAt is null
+            """)
+    List<TeamMembershipRow> findMembershipsByUser(@Param("user") User user);
 
     // 팀 삭제 시 모든 구성원 소속 해제
     @Modifying(flushAutomatically = true, clearAutomatically = true)

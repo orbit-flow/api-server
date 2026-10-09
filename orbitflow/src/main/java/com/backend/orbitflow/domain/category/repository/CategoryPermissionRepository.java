@@ -11,6 +11,8 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Set;
+import com.backend.orbitflow.domain.category.dto.CategoryGrant;
+import com.backend.orbitflow.domain.user.entity.User;
 
 public interface CategoryPermissionRepository extends JpaRepository<CategoryPermission, Long> {
 
@@ -31,6 +33,29 @@ public interface CategoryPermissionRepository extends JpaRepository<CategoryPerm
                    or cp.role in (select mr.role from TeamMemberRole mr where mr.member = :member))
             """)
     Set<Long> findAllowedCategoryIds(@Param("team") Team team, @Param("member") TeamMember member);
+
+    // 팀의 모든 카테고리 열람 허용 대상 (TeamCategoryAccess)
+    @Query("""
+            select new com.backend.orbitflow.domain.category.dto.CategoryGrant(c.id, r.id, m.id)
+            from CategoryPermission cp
+            join cp.category c
+            left join cp.role r
+            left join cp.member m
+            where c.team = :team
+            """)
+    List<CategoryGrant> findGrantsByTeam(@Param("team") Team team);
+
+    // 사용자 본인 또는 본인 역할에 열람이 허용된 카테고리 (모든 팀, ViewerTeamScope)
+    @Query("""
+            select distinct c.id
+            from CategoryPermission cp
+            join cp.category c
+            left join cp.member m
+            left join cp.role r
+            where m.user = :user
+               or r in (select mr.role from TeamMemberRole mr where mr.member.user = :user)
+            """)
+    Set<Long> findAllowedCategoryIdsByUser(@Param("user") User user);
 
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("delete from CategoryPermission cp where cp.category = :category")

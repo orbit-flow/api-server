@@ -11,6 +11,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
+import java.util.Collection;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -18,6 +20,11 @@ import java.util.Optional;
 public class BlockServiceImpl implements BlockService{
 
     private final BlockRepository blockRepository;
+
+    @Transactional(readOnly = true)
+    public Set<Long> findBlockedUserIdsAmong(User user, Collection<Long> userIds) {
+        return userIds.isEmpty() ? Set.of() : blockRepository.findBlockedUserIdsAmong(user, userIds);
+    }
 
     @Transactional(readOnly = true)
     public boolean isBlocked(User a, User b) {
