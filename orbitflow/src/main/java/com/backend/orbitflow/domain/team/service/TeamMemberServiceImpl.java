@@ -1,6 +1,5 @@
 package com.backend.orbitflow.domain.team.service;
 
-import com.backend.orbitflow.domain.category.repository.CategoryPermissionRepository;
 import com.backend.orbitflow.domain.chat.repository.ChatroomMemberRepository;
 import com.backend.orbitflow.domain.team.dto.response.TeamMemberResponse;
 import com.backend.orbitflow.domain.team.entity.Team;
@@ -38,7 +37,6 @@ public class TeamMemberServiceImpl implements TeamMemberService {
     private final TeamRoleRepository teamRoleRepository;
     private final TeamMemberRoleRepository teamMemberRoleRepository;
     private final TeamAuthorityService teamAuthorityService;
-    private final CategoryPermissionRepository categoryPermissionRepository;
     private final TodoRepository todoRepository;
     private final ChatroomMemberRepository chatroomMemberRepository;
     private final ApplicationEventPublisher eventPublisher;
@@ -162,11 +160,10 @@ public class TeamMemberServiceImpl implements TeamMemberService {
     }
 
     // 담당하던 미완료 팀 투두는 상위 권한(전체 권한)을 가진 팀 소유자가 상속
+    // 역할 부여·개별 열람 권한은 DB가 연쇄 삭제
     private void removeMember(Team team, TeamMember member) {
         todoRepository.reassignIncompleteTeamTodos(team, member.getUser(), team.getOwner());
         chatroomMemberRepository.deleteAllByTeamAndUser(team, member.getUser());
-        teamMemberRoleRepository.deleteAllByMember(member);
-        categoryPermissionRepository.deleteAllByMember(member);
         teamMemberRepository.deleteById(member.getId());
     }
 

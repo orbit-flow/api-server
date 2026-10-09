@@ -1,5 +1,6 @@
 package com.backend.orbitflow.domain.point.facade;
 
+import com.backend.orbitflow.domain.point.dto.response.AttendanceResponse;
 import com.backend.orbitflow.domain.point.dto.response.AttendanceStatusResponse;
 import com.backend.orbitflow.domain.point.dto.response.PointTransactionResponse;
 import com.backend.orbitflow.domain.point.enums.PointTransactionType;
@@ -21,7 +22,7 @@ public class PointFacade {
 
     // 포인트 변경 : READ COMMITTED 필수 (PointLedger 참고)
     @Transactional(isolation = Isolation.READ_COMMITTED)
-    public PointTransactionResponse attend(AuthUser authUser) {
+    public AttendanceResponse attend(AuthUser authUser) {
         return pointService.attend(userService.getByUuid(authUser.getUuid()));
     }
 

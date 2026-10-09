@@ -1,12 +1,10 @@
 package com.backend.orbitflow.domain.team.service;
 
-import com.backend.orbitflow.domain.category.repository.CategoryPermissionRepository;
 import com.backend.orbitflow.domain.team.dto.response.TeamRoleResponse;
 import com.backend.orbitflow.domain.team.entity.Team;
 import com.backend.orbitflow.domain.team.entity.TeamRole;
 import com.backend.orbitflow.domain.team.enums.TeamPermission;
 import com.backend.orbitflow.domain.team.error.TeamErrorCode;
-import com.backend.orbitflow.domain.team.repository.TeamMemberRoleRepository;
 import com.backend.orbitflow.domain.team.repository.TeamRoleRepository;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.global.common.error.exception.CommonException;
@@ -23,9 +21,7 @@ import java.util.List;
 public class TeamRoleServiceImpl implements TeamRoleService {
 
     private final TeamRoleRepository teamRoleRepository;
-    private final TeamMemberRoleRepository teamMemberRoleRepository;
     private final TeamAuthorityService teamAuthorityService;
-    private final CategoryPermissionRepository categoryPermissionRepository;
 
     @Transactional(readOnly = true)
     public List<TeamRoleResponse> getRoles(Team team, User me) {
@@ -59,9 +55,7 @@ public class TeamRoleServiceImpl implements TeamRoleService {
             throw new CommonException(TeamErrorCode.DEFAULT_ROLE_DELETE);
         }
         teamAuthorityService.checkGrantable(team, actor, role.getPermissionsMask());
-        teamMemberRoleRepository.deleteAllByRole(role);
-        categoryPermissionRepository.deleteAllByRole(role);
-        teamRoleRepository.deleteById(role.getId());
+        teamRoleRepository.deleteById(role.getId());   // 역할 부여·역할 열람 권한은 DB가 연쇄 삭제
     }
 
     // 팀당 기본 역할은 1개, 이후 초대 수락자부터 적용 (기존 구성원의 역할은 변경하지 않음)

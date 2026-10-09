@@ -150,17 +150,13 @@ public class PostServiceImpl implements PostService {
         return toResponse(post, result, actor);
     }
 
-    // 게시글 삭제 시 사진·댓글·좋아요를 같은 시점에 함께 삭제
+    // 게시글 삭제 시 사진·댓글·좋아요는 DB가 연쇄 삭제, S3 사진 파일은 커밋 후 삭제
     public void deletePost(User actor, Long postId) {
         Post post = getActivePost(postId);
         checkAuthor(post, actor);
         List<String> imageUrls = postImageRepository.findAllByPostOrderBySortOrderAsc(post).stream()
                 .map(PostImage::getImageUrl)
                 .toList();
-        postLikeRepository.deleteAllByPost(post);
-        commentRepository.deleteAllRepliesByPost(post);
-        commentRepository.deleteAllByPost(post);
-        postImageRepository.deleteAllByPost(post);
         postRepository.deleteById(post.getId());
         s3FileManager.deleteAfterCommit(imageUrls);
     }

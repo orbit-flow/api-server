@@ -94,6 +94,7 @@ public class CategoryServiceImpl implements CategoryService {
     }
 
     // 소속 투두는 같은 소유자의 다른 카테고리로 이동, 같은 소유자의 다른 카테고리가 없으면 삭제 불가
+    // 열람 권한은 DB가 연쇄 삭제
     public void deleteCategory(User actor, Long categoryId, Long moveToCategoryId) {
         Category category = getActiveCategory(categoryId);
         categoryAuthorityService.checkEdit(category, actor);
@@ -104,7 +105,6 @@ public class CategoryServiceImpl implements CategoryService {
                 .filter(category::isSameOwner)
                 .orElseThrow(() -> new CommonException(CategoryErrorCode.INVALID_MOVE_TARGET));
         todoRepository.moveAllToCategory(category, moveTo);
-        categoryPermissionRepository.deleteAllByCategory(category);
         categoryRepository.deleteById(category.getId());
     }
 

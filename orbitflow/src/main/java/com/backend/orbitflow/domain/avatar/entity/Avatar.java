@@ -1,5 +1,6 @@
 package com.backend.orbitflow.domain.avatar.entity;
 
+import com.backend.orbitflow.domain.avatar.policy.LevelPolicy;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.global.common.entity.BaseEntity;
 import jakarta.persistence.*;
@@ -31,6 +32,7 @@ public class Avatar extends BaseEntity {
     @Column(nullable = false)
     private int level;
 
+    // 누적 경험치 (출석으로만 획득)
     @Column(nullable = false)
     private long exp;
 
@@ -50,5 +52,16 @@ public class Avatar extends BaseEntity {
 
     public boolean hasPoint(int amount) {
         return this.point >= amount;
+    }
+
+    // 경험치·레벨 변경도 포인트와 같이 아바타 행 락 아래에서만 수행 (LevelPolicy 참고)
+    public void gainExp(int amount) {
+        this.exp += amount;
+        this.level = LevelPolicy.levelOf(this.exp);
+    }
+
+    public void loseExp(int amount) {
+        this.exp = Math.max(0L, this.exp - amount);
+        this.level = LevelPolicy.levelOf(this.exp);
     }
 }

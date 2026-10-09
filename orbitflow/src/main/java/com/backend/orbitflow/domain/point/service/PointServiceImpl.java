@@ -1,7 +1,11 @@
 package com.backend.orbitflow.domain.point.service;
 
+import com.backend.orbitflow.domain.avatar.dto.response.LevelResponse;
+import com.backend.orbitflow.domain.avatar.entity.Avatar;
+import com.backend.orbitflow.domain.avatar.policy.LevelPolicy;
 import com.backend.orbitflow.domain.notification.event.PointEarnedEvent;
 import com.backend.orbitflow.domain.notification.event.PointRevokedEvent;
+import com.backend.orbitflow.domain.point.dto.response.AttendanceResponse;
 import com.backend.orbitflow.domain.point.dto.response.AttendanceStatusResponse;
 import com.backend.orbitflow.domain.point.dto.response.PointTransactionResponse;
 import com.backend.orbitflow.domain.point.entity.PointTransaction;
@@ -37,14 +41,22 @@ public class PointServiceImpl implements PointService {
     // 운영일 기준 하루 1회 : 아바타 행 락을 먼저 잡은 뒤 오늘 출석 여부를 확인하므로
     // 동시 출석 요청은 직렬화되어 두 번째 요청은 첫 요청의 출석 기록을 보고 거부됨
     @Transactional(isolation = Isolation.READ_COMMITTED)
-    public PointTransactionResponse attend(User me) {
-        pointLedger.lock(me);
+    // 출석은 경험치를 얻는 유일한 경로 : 포인트와 같은 아바타 락 아래에서 경험치·레벨 반영
+    public AttendanceResponse attend(User me) {
+        Avatar avatar = pointLedger.lock(me);
         if (attendedToday(me)) {
             throw new CommonException(PointErrorCode.ALREADY_ATTENDED);
         }
         PointTransaction transaction = pointLedger.deposit(me, PointTransactionType.ATTENDANCE, ATTENDANCE_POINT);
+        int before = avatar.getLevel();
+        avatar.gainExp(LevelPolicy.ATTENDANCE_EXP);
         eventPublisher.publishEvent(new PointEarnedEvent(me.getId(), "출석 포인트", ATTENDANCE_POINT, transaction.getBalanceAfter()));
-        return PointTransactionResponse.from(transaction);
+        return new AttendanceResponse(
+                PointTransactionResponse.from(transaction),
+                LevelPolicy.ATTENDANCE_EXP,
+                avatar.getLevel() > before,
+                LevelResponse.from(avatar)
+        );
     }
 
     @Transactional(readOnly = true)
@@ -64,6 +76,7 @@ public class PointServiceImpl implements PointService {
     }
 
     // 무효·부정 출석으로 확정된 적립 포인트 회수 (잔액이 부족하면 음수로 기록)
+    // 해당 출석으로 얻은 경험치도 차감 (레벨 하락 가능)
     // 중복 회수 방지 : 아바타 락 아래에서 회수 여부 확인 + source_transaction_id unique 제약
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public PointTransactionResponse revokeAttendance(Long transactionId) {
@@ -74,11 +87,12 @@ public class PointServiceImpl implements PointService {
             throw new CommonException(PointErrorCode.NOT_REVOCABLE_TRANSACTION);
         }
         User user = source.getUser();
-        pointLedger.lock(user);
+        Avatar avatar = pointLedger.lock(user);
         if (pointTransactionRepository.existsBySourceTransaction(source)) {
             throw new CommonException(PointErrorCode.ALREADY_REVOKED);
         }
         PointTransaction revoke = pointLedger.revoke(user, source);
+        avatar.loseExp(LevelPolicy.ATTENDANCE_EXP);
         eventPublisher.publishEvent(new PointRevokedEvent(user.getId(), source.getAmount(), revoke.getBalanceAfter()));
         return PointTransactionResponse.from(revoke);
     }

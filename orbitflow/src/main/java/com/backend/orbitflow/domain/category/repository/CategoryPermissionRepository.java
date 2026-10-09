@@ -4,7 +4,6 @@ import com.backend.orbitflow.domain.category.entity.Category;
 import com.backend.orbitflow.domain.category.entity.CategoryPermission;
 import com.backend.orbitflow.domain.team.entity.Team;
 import com.backend.orbitflow.domain.team.entity.TeamMember;
-import com.backend.orbitflow.domain.team.entity.TeamRole;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -36,16 +35,6 @@ public interface CategoryPermissionRepository extends JpaRepository<CategoryPerm
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("delete from CategoryPermission cp where cp.category = :category")
     void deleteAllByCategory(@Param("category") Category category);
-
-    // 팀원 탈퇴·추방 시 정리
-    @Modifying(flushAutomatically = true, clearAutomatically = true)
-    @Query("delete from CategoryPermission cp where cp.member = :member")
-    void deleteAllByMember(@Param("member") TeamMember member);
-
-    // 역할 삭제 시 정리
-    @Modifying(flushAutomatically = true, clearAutomatically = true)
-    @Query("delete from CategoryPermission cp where cp.role = :role")
-    void deleteAllByRole(@Param("role") TeamRole role);
 
     // 팀 삭제 시 팀원 지정 권한 정리 (구성원 소속이 모두 해제되므로, 역할 지정 권한은 복구를 위해 유지)
     @Modifying(flushAutomatically = true, clearAutomatically = true)

@@ -1,5 +1,6 @@
 package com.backend.orbitflow.domain.point.controller;
 
+import com.backend.orbitflow.domain.point.dto.response.AttendanceResponse;
 import com.backend.orbitflow.domain.point.dto.response.AttendanceStatusResponse;
 import com.backend.orbitflow.domain.point.dto.response.PointSuccessCode;
 import com.backend.orbitflow.domain.point.dto.response.PointTransactionResponse;
@@ -22,7 +23,7 @@ public class PointController {
 
     // 출석 포인트 적립 (운영일 기준 하루 1회)
     @PostMapping("/attendance")
-    public ResponseEntity<CommonResponse<PointTransactionResponse>> attend(
+    public ResponseEntity<CommonResponse<AttendanceResponse>> attend(
             @AuthenticationPrincipal AuthUser authUser
     ) {
         return ResponseEntity

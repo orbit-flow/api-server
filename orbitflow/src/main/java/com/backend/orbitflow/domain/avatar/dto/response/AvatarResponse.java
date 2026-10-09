@@ -14,8 +14,7 @@ import java.util.List;
 public record AvatarResponse(
         String userUuid,
         String userName,
-        int level,
-        long exp,
+        LevelResponse level,
         Integer point,
         List<EquippedItem> equippedItems
 ) {
@@ -27,8 +26,7 @@ public record AvatarResponse(
         return new AvatarResponse(
                 user.getUuid(),
                 user.getName(),
-                avatar.getLevel(),
-                avatar.getExp(),
+                LevelResponse.from(avatar),
                 includePoint ? avatar.getPoint() : null,
                 equipped.stream()
                         .map(UserItem::getItem)

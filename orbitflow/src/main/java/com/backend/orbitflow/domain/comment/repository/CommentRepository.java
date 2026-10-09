@@ -7,7 +7,6 @@ import com.backend.orbitflow.domain.user.entity.User;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -69,17 +68,4 @@ public interface CommentRepository extends JpaRepository<Comment, Long> {
             order by c.createdAt asc, c.id asc
             """)
     List<Comment> findRepliesByParentIn(@Param("parents") Collection<Comment> parents, @Param("viewer") User viewer);
-
-    @Modifying(flushAutomatically = true, clearAutomatically = true)
-    @Query("delete from Comment c where c.parentComment = :parent")
-    void deleteAllByParent(@Param("parent") Comment parent);
-
-    // 자기 참조 FK 때문에 대댓글을 먼저 삭제
-    @Modifying(flushAutomatically = true, clearAutomatically = true)
-    @Query("delete from Comment c where c.post = :post and c.parentComment is not null")
-    void deleteAllRepliesByPost(@Param("post") Post post);
-
-    @Modifying(flushAutomatically = true, clearAutomatically = true)
-    @Query("delete from Comment c where c.post = :post")
-    void deleteAllByPost(@Param("post") Post post);
 }

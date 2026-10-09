@@ -7,7 +7,6 @@ import com.backend.orbitflow.domain.user.entity.User;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -54,8 +53,4 @@ public interface PostLikeRepository extends JpaRepository<PostLike, Long> {
                               where (b.blocker = :viewer and b.blockee = u) or (b.blocker = u and b.blockee = :viewer))
             """)
     Page<PostLike> findAllByPost(@Param("post") Post post, @Param("viewer") User viewer, Pageable pageable);
-
-    @Modifying(flushAutomatically = true, clearAutomatically = true)
-    @Query("delete from PostLike l where l.post = :post")
-    void deleteAllByPost(@Param("post") Post post);
 }

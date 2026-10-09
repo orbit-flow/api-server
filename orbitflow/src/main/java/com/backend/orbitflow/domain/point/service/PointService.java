@@ -1,5 +1,6 @@
 package com.backend.orbitflow.domain.point.service;
 
+import com.backend.orbitflow.domain.point.dto.response.AttendanceResponse;
 import com.backend.orbitflow.domain.point.dto.response.AttendanceStatusResponse;
 import com.backend.orbitflow.domain.point.dto.response.PointTransactionResponse;
 import com.backend.orbitflow.domain.point.enums.PointTransactionType;
@@ -11,7 +12,7 @@ public interface PointService {
     // 유효한 출석 1회당 1포인트
     int ATTENDANCE_POINT = 1;
 
-    PointTransactionResponse attend(User me);
+    AttendanceResponse attend(User me);
     AttendanceStatusResponse getAttendanceStatus(User me);
     Page<PointTransactionResponse> getHistory(User me, int page, int size);
 

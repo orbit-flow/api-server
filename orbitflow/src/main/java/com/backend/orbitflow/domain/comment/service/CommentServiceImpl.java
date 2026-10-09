@@ -74,14 +74,11 @@ public class CommentServiceImpl implements CommentService {
         return CommentResponse.from(comment);
     }
 
-    // 댓글 작성자 또는 게시글 작성자가 삭제, 최상위 댓글 삭제 시 대댓글도 함께 삭제
+    // 댓글 작성자 또는 게시글 작성자가 삭제, 최상위 댓글 삭제 시 대댓글은 DB가 연쇄 삭제
     public void deleteComment(User actor, Long commentId) {
         Comment comment = getActiveComment(commentId);
         if (!comment.isAuthor(actor) && !comment.getPost().isAuthor(actor)) {
             throw new CommonException(CommentErrorCode.COMMENT_DELETE_DENIED);
-        }
-        if (!comment.isReply()) {
-            commentRepository.deleteAllByParent(comment);
         }
         commentRepository.deleteById(comment.getId());
     }
