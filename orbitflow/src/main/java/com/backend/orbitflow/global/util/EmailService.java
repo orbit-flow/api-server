@@ -57,6 +57,19 @@ public class EmailService {
         return message;
     }
 
+    public void sendWithdrawalEmail(String email, String name) {
+        String title = "OrbitFlow 회원 탈퇴 처리 안내";
+        String content = "<html>"
+                + "<body>"
+                + "<h2>" + name + "님의 회원 탈퇴가 처리되었습니다.</h2>"
+                + "<p>탈퇴 신청일로부터 30일간 계정 정보가 보관되며, 이 기간 내에 다시 로그인하면 계정이 복구됩니다.</p>"
+                + "<p>30일이 지나면 계정과 작성한 게시글·댓글·메시지가 영구 삭제됩니다.</p>"
+                + "<footer style = 'color: grey; font-size: small;'>"
+                + "<p>이 메일은 자동응답 메일입니다. 회신하지 마시기 바랍니다.</p>"
+                + "</footer> </body> </html>";
+        sendEmail(email, title, content);
+    }
+
     public void sendCodeByEmail(String email, String code) {
         String title = "OrbitFlow 이메일 인증 번호";
         String content = "<html>"

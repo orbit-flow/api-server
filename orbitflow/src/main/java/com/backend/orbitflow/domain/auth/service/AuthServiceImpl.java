@@ -55,9 +55,21 @@ public class AuthServiceImpl implements AuthService{
         }
         redisUtil.deleteValues(email);
 
+        // 가입·이메일 변경 시 제출할 인증 토큰 (기존에는 빈 문자열을 반환해 가입이 불가능했음)
         String token = UUID.randomUUID().toString().replace("-", "");
         redisUtil.setValues(email, token, Duration.ofMillis(expireTime));
-        return "";
+        return token;
+    }
+
+    // 일회성 이메일 인증 (휴면 해제 등) : 코드 검증 후 즉시 폐기
+    public void verifyCode(String email, String code) {
+        String sentCode = redisUtil.getValues(email, String.class).orElseThrow(
+                () -> new CommonException(AuthErrorCode.NO_VARIFY_CODE)
+        );
+        if (!sentCode.equals(code)) {
+            throw new CommonException(AuthErrorCode.EMAIL_VARIFY_FAIL);
+        }
+        redisUtil.deleteValues(email);
     }
 
 }

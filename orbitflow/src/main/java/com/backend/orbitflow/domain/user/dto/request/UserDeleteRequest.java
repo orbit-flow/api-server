@@ -1,9 +1,9 @@
 package com.backend.orbitflow.domain.user.dto.request;
 
-import jakarta.validation.constraints.NotBlank;
-
+// 이메일·비밀번호 가입자 : 현재 비밀번호 재입력 필수
+// 비밀번호가 없는 소셜 가입자 : 사용자 이름 확인
 public record UserDeleteRequest(
-        @NotBlank(message = "사용자 이름을 확인해 주세요.")
+        String password,
         String confirmName
 ) {
 }

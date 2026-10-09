@@ -21,6 +21,9 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestPart;
+import org.springframework.http.MediaType;
+import org.springframework.web.multipart.MultipartFile;
 
 
 @RestController
@@ -64,6 +67,33 @@ public class UserController {
             .body(CommonResponse.success(
                 UserSuccessCode.USER_PROFILE_UPDATE,
                 userFacade.updateProfile(authUser, request)
+            ));
+    }
+
+    // multipart : image (최대 10MB)
+    @PutMapping(value = "/me/profile-image", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<CommonResponse<UserResponse>> updateProfileImage(
+        @AuthenticationPrincipal AuthUser authUser,
+        @RequestPart("image") MultipartFile image
+    ) {
+        return ResponseEntity
+            .status(HttpStatus.OK)
+            .body(CommonResponse.success(
+                UserSuccessCode.USER_PROFILE_IMAGE_UPDATE,
+                userFacade.updateProfileImage(authUser, image)
+            ));
+    }
+
+    // 기본 이미지로 초기화
+    @DeleteMapping("/me/profile-image")
+    public ResponseEntity<CommonResponse<UserResponse>> deleteProfileImage(
+        @AuthenticationPrincipal AuthUser authUser
+    ) {
+        return ResponseEntity
+            .status(HttpStatus.OK)
+            .body(CommonResponse.success(
+                UserSuccessCode.USER_PROFILE_IMAGE_UPDATE,
+                userFacade.deleteProfileImage(authUser)
             ));
     }
 

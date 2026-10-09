@@ -1,5 +1,6 @@
 package com.backend.orbitflow.domain.auth.controller;
 
+import com.backend.orbitflow.domain.auth.dto.request.DormantReleaseRequest;
 import com.backend.orbitflow.domain.auth.dto.request.EmailVarifyRequest;
 import com.backend.orbitflow.domain.auth.dto.request.LoginRequest;
 import com.backend.orbitflow.domain.auth.dto.request.EmailCodeRequest;
@@ -66,6 +67,19 @@ public class AuthController {
                 .header(HttpHeaders.SET_COOKIE, token.refreshToken().toString())
                 .body(CommonResponse.success(
                         AuthSuccessCode.REISSUE_SUCCESS
+                ));
+    }
+
+    // 장기 미접속 휴면 계정 해제 (일회성 이메일 인증)
+    @PostMapping("/dormant/release")
+    public ResponseEntity<CommonResponse<Void>> releaseDormant(
+            @Valid @RequestBody DormantReleaseRequest request
+    ) {
+        authFacade.releaseDormant(request);
+        return ResponseEntity
+                .status(HttpStatus.OK)
+                .body(CommonResponse.success(
+                        AuthSuccessCode.DORMANT_RELEASE
                 ));
     }
 

@@ -32,7 +32,15 @@ public enum AuthErrorCode implements ErrorCode {
     EMAIL_VARIFY_FAIL(HttpStatus.BAD_REQUEST,
             "이메일 인증에 실패하였습니다. 다시 입력해주세요.",
             "https://orbitflow.com/errors/email-varify-fail",
-            "Email Varify Fail");
+            "Email Varify Fail"),
+    ACCOUNT_DORMANT(HttpStatus.FORBIDDEN,
+            "장기 미접속으로 휴면 전환된 계정입니다. 이메일 인증 후 이용할 수 있습니다.",
+            "https://orbitflow.com/errors/account-dormant",
+            "Account Dormant"),
+    NOT_DORMANT_ACCOUNT(HttpStatus.BAD_REQUEST,
+            "휴면 계정이 아닙니다.",
+            "https://orbitflow.com/errors/not-dormant-account",
+            "Not Dormant Account");
 
     private final HttpStatus httpStatus;
     private final String message;

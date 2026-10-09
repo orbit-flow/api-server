@@ -79,11 +79,15 @@ public class User extends SoftDeleteEntity{
         this.lastLoginAt = LocalDateTime.now();
     }
 
-    public void updateUserInfo(String name, String introduce, String profileImage, boolean isPrivate) {
+    public void updateUserInfo(String name, String introduce, boolean isPrivate) {
         this.name = name;
         this.introduce = introduce;
-        this.profileImage = profileImage;
         this.isPrivate = isPrivate;
+    }
+
+    // null이면 FE 기본 이미지
+    public void updateProfileImage(String profileImage) {
+        this.profileImage = profileImage;
     }
 
     public void updateEmail(String email) {

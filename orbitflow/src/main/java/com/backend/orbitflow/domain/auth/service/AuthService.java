@@ -9,4 +9,5 @@ public interface AuthService {
     void authenticate(User user, String password);
     String createCode(String email, Long time);
     String varifyEmail(String email, String code, Long expireTime);
+    void verifyCode(String email, String code);
 }

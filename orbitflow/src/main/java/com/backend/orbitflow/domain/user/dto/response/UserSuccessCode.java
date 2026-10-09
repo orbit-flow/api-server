@@ -14,6 +14,7 @@ public enum UserSuccessCode implements SuccessCode{
     USER_SIGNUP_SUCCESS(HttpStatus.CREATED, "회원가입 되었습니다."),
     GET_USER_INFO(HttpStatus.OK, "내 정보가 열람되었습니다."),
     USER_PROFILE_UPDATE(HttpStatus.OK, "사용자 정보가 업데이트 되었습니다."),
+    USER_PROFILE_IMAGE_UPDATE(HttpStatus.OK, "프로필 이미지가 변경되었습니다."),
     USER_EMAIL_UPDATE(HttpStatus.OK, "이메일이 업데이트 되었습니다."),
     USER_PASSWORD_UPDATE(HttpStatus.OK, "사용자 정보가 업데이트 되었습니다."),
     USER_DELETE(HttpStatus.NO_CONTENT, "회원 탈퇴가 완료되었습니다.");

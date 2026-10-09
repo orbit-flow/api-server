@@ -8,7 +8,8 @@ import org.springframework.http.HttpStatus;
 @Getter
 @RequiredArgsConstructor
 public enum AuthSuccessCode implements SuccessCode {
-    LOGIN_SUCCESS(HttpStatus.OK, "로그인 되었습니다."),
+
+    DORMANT_RELEASE(HttpStatus.OK, "휴면 상태가 해제되었습니다. 다시 로그인해주세요."),    LOGIN_SUCCESS(HttpStatus.OK, "로그인 되었습니다."),
     LOGOUT_SUCCESS(HttpStatus.OK, "로그아웃 되었습니다."),
     OAUTH_LOGIN_SUCCESS(HttpStatus.OK, "소셜 로그인 되었습니다."),
     REISSUE_SUCCESS(HttpStatus.OK, "토큰이 재발급 되었습니다."),

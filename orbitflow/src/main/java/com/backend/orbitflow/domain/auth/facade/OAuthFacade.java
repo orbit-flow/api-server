@@ -55,11 +55,21 @@ public class OAuthFacade extends DefaultOAuth2UserService {
 
         // 소셜 가입 시 기본 아바타·초기 포인트는 가입 트랜잭션에서 함께 생성 (UserRegisteredEvent)
         if (user.isEmpty()) oAuthService.link(oAuthUser, oAuth2UserInfo.getProvider(), oAuth2UserInfo.getProviderId());
-        // 정지 계정은 소셜 로그인도 거부 (OAuth2 실패 핸들러로 전달)
+        // 탈퇴 유예 계정 복구, 정지·휴면 계정은 소셜 로그인도 거부 (OAuth2 실패 핸들러로 전달)
+        try {
+            userService.restoreIfWithdrawn(oAuthUser);
+        } catch (CommonException e) {
+            throw new OAuth2AuthenticationException(new OAuth2Error("account_withdrawn"), e.getMessage());
+        }
         try {
             suspensionService.validateNotSuspended(oAuthUser);
         } catch (CommonException e) {
             throw new OAuth2AuthenticationException(new OAuth2Error("account_suspended"), e.getMessage());
+        }
+        try {
+            userService.validateNotDormant(oAuthUser);
+        } catch (CommonException e) {
+            throw new OAuth2AuthenticationException(new OAuth2Error("account_dormant"), e.getMessage());
         }
         userService.updateLastLoginAt(oAuthUser);
 

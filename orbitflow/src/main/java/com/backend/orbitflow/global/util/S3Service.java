@@ -104,6 +104,11 @@ public class S3Service {
                 .collect(Collectors.toList());
     }
 
+    // 이 서비스의 버킷에 업로드한 파일인지 (소셜 프로필 등 외부 URL은 삭제 대상 아님)
+    public boolean isManagedFile(String fileUrl) {
+        return fileUrl != null && fileUrl.startsWith("https://" + bucket + ".s3." + region + ".amazonaws.com/");
+    }
+
     public void deleteFile(String fileUrl) {
         try {
             String key = extractKeyFromUrl(fileUrl);
