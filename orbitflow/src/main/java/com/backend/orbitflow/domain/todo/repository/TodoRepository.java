@@ -6,12 +6,14 @@ import com.backend.orbitflow.domain.todo.entity.Routine;
 import com.backend.orbitflow.domain.todo.entity.Todo;
 import com.backend.orbitflow.domain.todo.enums.TodoType;
 import com.backend.orbitflow.domain.user.entity.User;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -66,6 +68,30 @@ public interface TodoRepository extends JpaRepository<Todo, Long> {
             @Param("type") TodoType type,
             @Param("from") LocalDateTime from,
             @Param("to") LocalDateTime to
+    );
+
+    // 타임라인 투두 완료 (kind = 1) : 정렬 키 (completedAt desc, kind asc, id desc)에서 커서 다음 항목
+    @Query("""
+            select t from Todo t
+            join fetch t.assignee u
+            join fetch t.category c
+            left join fetch c.user
+            left join fetch c.team
+            where u in :users
+              and u.deletedAt is null
+              and t.isCompleted = true
+              and t.completedAt is not null
+              and t.deletedAt is null
+              and (t.completedAt < :time
+                   or (t.completedAt = :time and (:kind = 0 or (:kind = 1 and t.id < :id))))
+            order by t.completedAt desc, t.id desc
+            """)
+    List<Todo> findTimelineCompletedTodos(
+            @Param("users") Collection<User> users,
+            @Param("time") LocalDateTime time,
+            @Param("kind") int kind,
+            @Param("id") Long id,
+            Pageable pageable
     );
 
     // 리마인드 후보 : 미완료·미삭제이고 리마인드가 설정된, 시작 시각이 (from, to] 구간인 투두

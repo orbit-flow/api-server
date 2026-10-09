@@ -18,6 +18,16 @@ public interface FollowRepository extends JpaRepository<Follow, Long> {
 
     Optional<Follow> findByFollowerAndFollowee(User follower, User followee);
 
+    // 타임라인 대상 : 내가 팔로우 중인(승인된) 계정 (탈퇴 사용자 제외)
+    @Query("""
+            select u from Follow f
+            join f.followee u
+            where f.follower = :user
+              and f.state = com.backend.orbitflow.domain.follow.enums.FollowState.ACCEPTED
+              and u.deletedAt is null
+            """)
+    List<User> findAcceptedFollowees(@Param("user") User user);
+
     // 활동 알림 수신 대상 : 승인된 팔로워 중 해당 계정의 알림을 켠 사용자 (탈퇴 사용자 제외)
     @Query("""
             select u from Follow f

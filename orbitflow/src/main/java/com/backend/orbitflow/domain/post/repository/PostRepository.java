@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -47,6 +48,28 @@ public interface PostRepository extends JpaRepository<Post, Long> {
                               where (b.blocker = :viewer and b.blockee = u) or (b.blocker = u and b.blockee = :viewer))
             """)
     Page<Post> findAllByTodo(@Param("todo") Todo todo, @Param("viewer") User viewer, Pageable pageable);
+
+    // 타임라인 게시글 (kind = 0) : 정렬 키 (createdAt desc, kind asc, id desc)에서 커서 다음 항목
+    @Query("""
+            select p from Post p
+            join fetch p.user u
+            join fetch p.todo t
+            join fetch t.category c
+            left join fetch c.user
+            left join fetch c.team
+            where u in :authors
+              and u.deletedAt is null
+              and (p.createdAt < :time
+                   or (p.createdAt = :time and :kind = 0 and p.id < :id))
+            order by p.createdAt desc, p.id desc
+            """)
+    List<Post> findTimelinePosts(
+            @Param("authors") Collection<User> authors,
+            @Param("time") LocalDateTime time,
+            @Param("kind") int kind,
+            @Param("id") Long id,
+            Pageable pageable
+    );
 
     // 작성자의 게시글이 속한 카테고리 목록 (열람 가능 여부 판정용)
     @Query("""

@@ -133,7 +133,7 @@ public class TodoServiceImpl implements TodoService {
         if (todo.isCompleted()) {
             eventPublisher.publishEvent(new TodoCompletedEvent(todo.getId(), actor.getId()));
         }
-        // TODO: 타임라인 구현 시 완료 활동 노출
+        // 완료 활동은 팔로워 타임라인에 조회 시점에 노출 (TimelineService), 완료 취소 시 제외
         return TodoResponse.from(todo);
     }
 

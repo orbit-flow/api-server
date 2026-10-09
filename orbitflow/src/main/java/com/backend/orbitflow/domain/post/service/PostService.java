@@ -17,4 +17,5 @@ public interface PostService {
     Page<PostResponse> getUserPosts(User viewer, User author, int page, int size);
     PostResponse updatePost(User actor, Long postId, String content, List<String> keepImageUrls, List<MultipartFile> newImages);
     void deletePost(User actor, Long postId);
+    List<PostResponse> toResponses(List<Post> posts, User viewer);
 }

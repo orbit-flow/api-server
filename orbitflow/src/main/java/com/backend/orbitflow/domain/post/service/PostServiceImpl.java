@@ -78,7 +78,7 @@ public class PostServiceImpl implements PostService {
         Post post = postRepository.save(Post.of(todo, actor, content));
         List<PostImage> postImages = saveImages(post, s3FileManager.upload(IMAGE_DIR, files), 0);
         eventPublisher.publishEvent(new PostCreatedEvent(post.getId()));
-        // TODO: 타임라인 구현 시 노출
+        // 팔로워 타임라인에는 조회 시점에 노출 (TimelineService)
         return PostResponse.of(post, postImages, 0, 0, false);
     }
 
@@ -231,24 +231,38 @@ public class PostServiceImpl implements PostService {
         );
     }
 
-    // 사진, 좋아요·댓글 수, 요청자의 좋아요 여부를 게시글 묶음 단위로 조회
     private Page<PostResponse> toResponses(Page<Post> posts, User viewer) {
+        Map<Long, PostResponse> responses = toResponseMap(posts.getContent(), viewer);
+        return posts.map(post -> responses.get(post.getId()));
+    }
+
+    // 열람 권한 검사는 호출 측 책임 (타임라인 등에서 이미 필터링된 게시글 변환용)
+    @Transactional(readOnly = true)
+    public List<PostResponse> toResponses(List<Post> posts, User viewer) {
+        Map<Long, PostResponse> responses = toResponseMap(posts, viewer);
+        return posts.stream()
+                .map(post -> responses.get(post.getId()))
+                .toList();
+    }
+
+    // 사진, 좋아요·댓글 수, 요청자의 좋아요 여부를 게시글 묶음 단위로 조회 (N+1 방지)
+    private Map<Long, PostResponse> toResponseMap(List<Post> posts, User viewer) {
         if (posts.isEmpty()) {
-            return posts.map(post -> PostResponse.of(post, List.of(), 0, 0, false));
+            return Map.of();
         }
-        List<Post> content = posts.getContent();
-        Map<Long, List<PostImage>> imagesByPost = postImageRepository.findAllByPostInOrderBySortOrderAsc(content).stream()
+        Map<Long, List<PostImage>> imagesByPost = postImageRepository.findAllByPostInOrderBySortOrderAsc(posts).stream()
                 .collect(Collectors.groupingBy(image -> image.getPost().getId()));
-        Map<Long, Long> likeCounts = toCountMap(postLikeRepository.countByPostIn(content));
-        Map<Long, Long> commentCounts = toCountMap(commentRepository.countByPostIn(content));
-        Set<Long> likedIds = postLikeRepository.findLikedPostIds(content, viewer);
-        return posts.map(post -> PostResponse.of(
-                post,
-                imagesByPost.getOrDefault(post.getId(), List.of()),
-                likeCounts.getOrDefault(post.getId(), 0L),
-                commentCounts.getOrDefault(post.getId(), 0L),
-                likedIds.contains(post.getId())
-        ));
+        Map<Long, Long> likeCounts = toCountMap(postLikeRepository.countByPostIn(posts));
+        Map<Long, Long> commentCounts = toCountMap(commentRepository.countByPostIn(posts));
+        Set<Long> likedIds = postLikeRepository.findLikedPostIds(posts, viewer);
+        return posts.stream()
+                .collect(Collectors.toMap(Post::getId, post -> PostResponse.of(
+                        post,
+                        imagesByPost.getOrDefault(post.getId(), List.of()),
+                        likeCounts.getOrDefault(post.getId(), 0L),
+                        commentCounts.getOrDefault(post.getId(), 0L),
+                        likedIds.contains(post.getId())
+                )));
     }
 
     private Map<Long, Long> toCountMap(List<PostCount> counts) {

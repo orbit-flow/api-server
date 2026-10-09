@@ -20,7 +20,9 @@ import java.time.LocalDateTime;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Table(name = "todos",
         // 반복 회차 중복 생성 방지 (논리적 삭제된 회차 포함)
-        uniqueConstraints = @UniqueConstraint(columnNames = {"routine_id", "start_date"}))
+        uniqueConstraints = @UniqueConstraint(columnNames = {"routine_id", "start_date"}),
+        // 타임라인 투두 완료 활동 조회
+        indexes = @Index(columnList = "assignee_id, completed_at"))
 public class Todo extends SoftDeleteEntity {
 
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)

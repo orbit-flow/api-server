@@ -14,7 +14,9 @@ import lombok.NoArgsConstructor;
 @Getter
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@Table(name = "posts")
+@Table(name = "posts",
+        // 타임라인·사용자별 게시글 조회
+        indexes = @Index(columnList = "user_id, created_at"))
 public class Post extends BaseEntity {
 
     public static final int MAX_IMAGE_COUNT = 3;
