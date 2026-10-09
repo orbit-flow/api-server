@@ -38,13 +38,17 @@ public enum GlobalErrorCode implements ErrorCode{
            "로그인 정보가 만료되었습니다.",
            "https://orbitflow.com/errors/expired-Token",
            "Expired Token"),
+    INVALID_INPUT_VALUE(HttpStatus.BAD_REQUEST,
+            "입력값이 올바르지 않습니다.",
+            "https://orbitflow.com/errors/invalid-input-value",
+            "Invalid Input Value"),
     CONCURRENT_REQUEST_CONFLICT(HttpStatus.CONFLICT,
             "동시에 처리 중인 요청이 있습니다. 잠시 후 다시 시도해주세요.",
             "https://orbitflow.com/errors/concurrent-request-conflict",
             "Concurrent Request Conflict"),
     INVALID_TOKEN(HttpStatus.BAD_REQUEST,
                 "잘못된 로그인 정보입니다.",
-                "https://orbitflow.com/errorsinvalid-token",
+                "https://orbitflow.com/errors/invalid-token",
                 "Invalid Token");
     
     private final HttpStatus httpStatus;

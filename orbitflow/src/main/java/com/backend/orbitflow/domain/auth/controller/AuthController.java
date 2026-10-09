@@ -31,6 +31,7 @@ public class AuthController {
 
     private final AuthFacade authFacade;
 
+    // access token은 Authorization 헤더(토큰 재발급과 동일), refresh token은 HttpOnly 쿠키로 전달
     @PostMapping("/login")
     public ResponseEntity<CommonResponse<Void>> login(
             @Valid @RequestBody LoginRequest request
@@ -38,7 +39,7 @@ public class AuthController {
         TokenResponse token = authFacade.login(request);
         return ResponseEntity
                 .status(HttpStatus.OK)
-                .header(HttpHeaders.SET_COOKIE, token.accessToken().toString())
+                .header(AUTHORIZATION_HEADER, token.accessToken())
                 .header(HttpHeaders.SET_COOKIE, token.refreshToken().toString())
                 .body(CommonResponse.success(
                         AuthSuccessCode.LOGIN_SUCCESS

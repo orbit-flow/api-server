@@ -46,8 +46,8 @@ public record CommonResponse<T>(
                 errorCode.getHttpStatus().value(),
                 data,
                 Error.of(
-                        errorCode.getType(),
                         errorCode.getTitle(),
+                        errorCode.getType(),
                         instance
                 ),
                 errorCode.getMessage(),
