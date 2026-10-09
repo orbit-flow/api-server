@@ -1,6 +1,7 @@
 package com.backend.orbitflow.domain.team.service;
 
 import com.backend.orbitflow.domain.category.repository.CategoryPermissionRepository;
+import com.backend.orbitflow.domain.chat.repository.ChatroomMemberRepository;
 import com.backend.orbitflow.domain.team.dto.response.TeamResponse;
 import com.backend.orbitflow.domain.team.entity.Team;
 import com.backend.orbitflow.domain.team.entity.TeamMember;
@@ -34,6 +35,7 @@ public class TeamServiceImpl implements TeamService {
     private final TeamInvitationRepository teamInvitationRepository;
     private final TeamAuthorityService teamAuthorityService;
     private final CategoryPermissionRepository categoryPermissionRepository;
+    private final ChatroomMemberRepository chatroomMemberRepository;
 
     @Transactional(readOnly = true)
     public Team getActiveTeam(String uuid) {
@@ -83,6 +85,7 @@ public class TeamServiceImpl implements TeamService {
         categoryPermissionRepository.deleteAllMemberPermissionsByTeam(team);
         teamMemberRepository.deleteAllByTeam(team);
         teamInvitationRepository.cancelAllPendingByTeam(team);
+        chatroomMemberRepository.deleteAllByTeam(team);
     }
 
     @Transactional(readOnly = true)

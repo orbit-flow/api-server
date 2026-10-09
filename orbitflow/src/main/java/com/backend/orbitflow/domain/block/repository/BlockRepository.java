@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.Optional;
+import java.util.Set;
 
 public interface BlockRepository extends JpaRepository<Block, Long> {
 
@@ -42,4 +43,8 @@ public interface BlockRepository extends JpaRepository<Block, Long> {
             @Param("keyword") String keyword,
             Pageable pageable
     );
+
+    // 내가 차단한 사용자 (다수 참여 대화에서 차단한 사용자의 메시지 가림 표시용)
+    @Query("select b.blockee.id from Block b where b.blocker = :blocker")
+    Set<Long> findBlockeeIds(@Param("blocker") User blocker);
 }

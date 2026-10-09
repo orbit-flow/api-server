@@ -94,6 +94,11 @@ public class User extends SoftDeleteEntity{
         this.status = status;
     }
 
+    // 팔로우 중이 아닌 사용자의 대화 초대 허용 여부
+    public void updateAllowNonFollowChatInvite(boolean allow) {
+        this.allowNonFollowChatInvite = allow;
+    }
+
     public void updatePassword(String password) {
         this.password = password;
     }

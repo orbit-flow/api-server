@@ -52,6 +52,11 @@ public class UserFacade {
                 ));
     }
 
+    @Transactional
+    public UserResponse updateChatInviteSetting(AuthUser authUser, UserChatInviteRequest request) {
+        return UserResponse.from(userService.updateChatInviteSetting(authUser.getUuid(), request.allowNonFollowChatInvite()));
+    }
+
     public void deleteUser(AuthUser authUser, UserDeleteRequest request) {
         userService.deleteUser(authUser.getUuid(), request.confirmName());
     }

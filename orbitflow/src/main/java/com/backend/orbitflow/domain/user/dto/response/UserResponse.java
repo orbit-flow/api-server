@@ -14,6 +14,7 @@ public record UserResponse(
     String introduce,
     UserStatus status,
     boolean isPrivate,
+    boolean allowNonFollowChatInvite,
     @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
     LocalDateTime createdAt
 ) {
@@ -26,6 +27,7 @@ public record UserResponse(
             user.getIntroduce(),
             user.getStatus(),
             user.isPrivate(),
+            user.isAllowNonFollowChatInvite(),
             user.getCreatedAt()
         );
     }

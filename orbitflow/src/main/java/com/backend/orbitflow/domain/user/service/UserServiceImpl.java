@@ -96,6 +96,12 @@ public class UserServiceImpl implements UserService{
         return userRepository.save(user);
     }
 
+    public User updateChatInviteSetting(String uuid, boolean allowNonFollowChatInvite) {
+        User user = getByUuid(uuid);
+        user.updateAllowNonFollowChatInvite(allowNonFollowChatInvite);
+        return user;
+    }
+
     public User updatePassword(String uuid, String password) {
         User user = getByUuid(uuid);
         user.updatePassword(password);

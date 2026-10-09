@@ -19,6 +19,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 
 
@@ -89,6 +90,20 @@ public class UserController {
             .body(CommonResponse.success(
                 UserSuccessCode.USER_PASSWORD_UPDATE,
                 userFacade.updatePassword(authUser, request)
+            ));
+    }
+
+    // 팔로우 중이 아닌 사용자의 대화 초대 허용 여부
+    @PatchMapping("/me/chat-invite")
+    public ResponseEntity<CommonResponse<UserResponse>> updateChatInviteSetting(
+        @AuthenticationPrincipal AuthUser authUser,
+        @Valid @RequestBody UserChatInviteRequest request
+    ) {
+        return ResponseEntity
+            .status(HttpStatus.OK)
+            .body(CommonResponse.success(
+                UserSuccessCode.USER_PROFILE_UPDATE,
+                userFacade.updateChatInviteSetting(authUser, request)
             ));
     }
 

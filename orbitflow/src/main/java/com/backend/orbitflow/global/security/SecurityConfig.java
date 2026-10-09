@@ -55,6 +55,8 @@ public class SecurityConfig {
                 ).permitAll()
                 .requestMatchers(HttpMethod.POST, "/api/users").permitAll()
                 .requestMatchers("/", "/*.html", "/css/**", "/js/**").permitAll()
+                // WebSocket 핸드셰이크는 허용, 인증은 STOMP CONNECT 프레임에서 수행 (StompAuthInterceptor)
+                .requestMatchers("/ws/**").permitAll()
 
                 // 플랫폼 운영 관리 기능은 관리자만
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
@@ -107,9 +109,8 @@ public class SecurityConfig {
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
 
-        // 기존 공개 API
-        source.registerCorsConfiguration("/api/hospitals/**", configuration);
-        source.registerCorsConfiguration("/api/auth/**", configuration);
+        // 전체 API
+        source.registerCorsConfiguration("/api/**", configuration);
 
         // WebSocket
         source.registerCorsConfiguration("/ws/**", configuration);

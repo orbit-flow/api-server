@@ -12,6 +12,7 @@ public interface UserService {
     User updateProfile(String uuid, String name, String profileImage, String introduce, boolean isPrivate);
     User updateEmail(String uuid, String email);
     User updatePassword(String uuid, String password);
+    User updateChatInviteSetting(String uuid, boolean allowNonFollowChatInvite);
     void deleteUser(String uuid, String confirmName);
     void updateLastLoginAt(User user);
 }
