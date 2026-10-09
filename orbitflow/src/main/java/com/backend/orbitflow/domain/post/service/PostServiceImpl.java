@@ -2,6 +2,7 @@ package com.backend.orbitflow.domain.post.service;
 
 import com.backend.orbitflow.domain.block.service.BlockService;
 import com.backend.orbitflow.domain.category.entity.Category;
+import com.backend.orbitflow.domain.comment.repository.CommentRepository;
 import com.backend.orbitflow.domain.category.service.CategoryAuthorityService;
 import com.backend.orbitflow.domain.category.service.CategoryService;
 import com.backend.orbitflow.domain.post.dto.response.PostResponse;
@@ -52,6 +53,15 @@ public class PostServiceImpl implements PostService {
     private final TeamAuthorityService teamAuthorityService;
     private final BlockService blockService;
     private final S3Service s3Service;
+    private final CommentRepository commentRepository;
+
+    // 게시글을 조회할 수 있는 사용자만 댓글·대댓글·좋아요 가능
+    @Transactional(readOnly = true)
+    public Post getViewablePost(User viewer, Long postId) {
+        Post post = getActivePost(postId);
+        checkView(post, viewer);
+        return post;
+    }
 
     public PostResponse createPost(User actor, Long todoId, String content, List<MultipartFile> images) {
         Todo todo = todoRepository.findWithAllById(todoId)
@@ -144,7 +154,9 @@ public class PostServiceImpl implements PostService {
         List<String> imageUrls = postImageRepository.findAllByPostOrderBySortOrderAsc(post).stream()
                 .map(PostImage::getImageUrl)
                 .toList();
-        // TODO: 댓글·좋아요 도메인 구현 후 함께 삭제
+        // TODO: 좋아요 도메인 구현 후 함께 삭제
+        commentRepository.deleteAllRepliesByPost(post);
+        commentRepository.deleteAllByPost(post);
         postImageRepository.deleteAllByPost(post);
         postRepository.deleteById(post.getId());
         deleteFilesAfterCommit(imageUrls);
