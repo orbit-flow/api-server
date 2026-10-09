@@ -4,6 +4,8 @@ import com.backend.orbitflow.domain.follow.enums.FollowState;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.global.common.entity.BaseEntity;
 import jakarta.persistence.*;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -23,10 +25,12 @@ public class Follow extends BaseEntity {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "followee_id", nullable = false)
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private User followee;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "follower_id", nullable = false)
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private User follower;
 
     // NOT_FOLLOW는 응답 전용 상태이므로 DB에는 PENDING, ACCEPTED만 저장

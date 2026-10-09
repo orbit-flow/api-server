@@ -3,6 +3,8 @@ package com.backend.orbitflow.domain.todo.entity;
 import com.backend.orbitflow.domain.todo.enums.DurationType;
 import com.backend.orbitflow.global.common.entity.BaseEntity;
 import jakarta.persistence.*;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -31,6 +33,7 @@ public class Routine extends BaseEntity {
 
     @OneToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "todo_id", nullable = false, unique = true)
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private Todo todo;
 
     // 반복 간격 (duration_type 단위)

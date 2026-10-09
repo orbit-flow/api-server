@@ -5,6 +5,8 @@ import com.backend.orbitflow.domain.team.entity.Team;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.global.common.entity.BaseEntity;
 import jakarta.persistence.*;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -24,10 +26,12 @@ public class Category extends BaseEntity {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "team_id")
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private Team team;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id")
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private User user;
 
     @Column(nullable = false, length = 50)

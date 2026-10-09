@@ -4,6 +4,8 @@ import com.backend.orbitflow.domain.todo.entity.Todo;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.global.common.entity.BaseEntity;
 import jakarta.persistence.*;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -27,10 +29,12 @@ public class Post extends BaseEntity {
     // 투두가 삭제되어도 게시글은 유지
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "todo_id", nullable = false)
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private Todo todo;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "user_id", nullable = false)
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private User user;
 
     @Column(nullable = false, columnDefinition = "TEXT")

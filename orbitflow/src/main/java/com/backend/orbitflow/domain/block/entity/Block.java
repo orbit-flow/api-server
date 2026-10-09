@@ -3,6 +3,8 @@ package com.backend.orbitflow.domain.block.entity;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.global.common.entity.BaseEntity;
 import jakarta.persistence.*;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -23,10 +25,12 @@ public class Block extends BaseEntity {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "blocker_id", nullable = false)
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private User blocker;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "blockee_id", nullable = false)
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private User blockee;
 
     public static Block of(User blocker, User blockee) {

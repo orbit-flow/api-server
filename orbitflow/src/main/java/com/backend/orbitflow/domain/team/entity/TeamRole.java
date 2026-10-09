@@ -2,6 +2,8 @@ package com.backend.orbitflow.domain.team.entity;
 
 import com.backend.orbitflow.global.common.entity.BaseEntity;
 import jakarta.persistence.*;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -22,6 +24,7 @@ public class TeamRole extends BaseEntity {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "team_id", nullable = false)
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private Team team;
 
     @Column(nullable = false, length = 50)

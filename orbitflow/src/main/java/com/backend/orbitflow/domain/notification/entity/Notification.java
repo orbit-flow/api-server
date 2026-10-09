@@ -4,6 +4,8 @@ import com.backend.orbitflow.domain.notification.enums.NotificationType;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.global.common.entity.BaseEntity;
 import jakarta.persistence.*;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -25,6 +27,7 @@ public class Notification extends BaseEntity {
     // 수신자
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "user_id", nullable = false)
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private User user;
 
     @Enumerated(EnumType.STRING)
@@ -37,6 +40,7 @@ public class Notification extends BaseEntity {
     // 알림을 발생시킨 사용자 (리마인드 등 시스템 알림은 null)
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "actor_id")
+    @OnDelete(action = OnDeleteAction.SET_NULL)
     private User actor;
 
     // 이동 대상 : 게시글·투두·카테고리·팔로우 id

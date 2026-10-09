@@ -4,6 +4,8 @@ import com.backend.orbitflow.domain.chat.enums.ChatroomType;
 import com.backend.orbitflow.domain.team.entity.Team;
 import com.backend.orbitflow.global.common.entity.BaseEntity;
 import jakarta.persistence.*;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -26,6 +28,7 @@ public class Chatroom extends BaseEntity {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "team_id")
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private Team team;
 
     @Enumerated(EnumType.STRING)

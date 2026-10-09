@@ -3,6 +3,8 @@ package com.backend.orbitflow.domain.chat.entity;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.global.common.entity.BaseEntity;
 import jakarta.persistence.*;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -25,10 +27,12 @@ public class ChatroomMember extends BaseEntity {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "chatroom_id", nullable = false)
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private Chatroom chatroom;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "user_id", nullable = false)
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private User user;
 
     // 안 읽은 메시지 수 계산용 (null이면 참여 이후 모든 메시지가 안 읽음)

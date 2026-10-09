@@ -3,6 +3,8 @@ package com.backend.orbitflow.domain.chat.entity;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.global.common.entity.BaseEntity;
 import jakarta.persistence.*;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -25,10 +27,12 @@ public class Message extends BaseEntity {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "chatroom_id", nullable = false)
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private Chatroom chatroom;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "sender_id", nullable = false)
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private User sender;
 
     @Column(nullable = false, columnDefinition = "TEXT")

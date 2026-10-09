@@ -5,6 +5,8 @@ import com.backend.orbitflow.domain.todo.enums.TodoType;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.global.common.entity.SoftDeleteEntity;
 import jakarta.persistence.*;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -30,16 +32,19 @@ public class Todo extends SoftDeleteEntity {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "category_id", nullable = false)
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private Category category;
 
     // 한 단계의 자식 투두만 허용
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "parent_todo_id")
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private Todo parentTodo;
 
     // 반복으로 생성된 투두 (원본 투두 포함)
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "routine_id")
+    @OnDelete(action = OnDeleteAction.SET_NULL)
     private Routine routine;
 
     // 담당자는 비워둘 수 없음 (개인 투두는 카테고리 소유자)

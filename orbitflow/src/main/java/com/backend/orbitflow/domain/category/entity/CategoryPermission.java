@@ -4,6 +4,8 @@ import com.backend.orbitflow.domain.team.entity.TeamMember;
 import com.backend.orbitflow.domain.team.entity.TeamRole;
 import com.backend.orbitflow.global.common.entity.BaseEntity;
 import jakarta.persistence.*;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -26,14 +28,17 @@ public class CategoryPermission extends BaseEntity {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "category_id", nullable = false)
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private Category category;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "role_id")
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private TeamRole role;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "member_id")
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private TeamMember member;
 
     public static CategoryPermission ofRole(Category category, TeamRole role) {

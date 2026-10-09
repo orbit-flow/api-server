@@ -3,6 +3,8 @@ package com.backend.orbitflow.domain.avatar.entity;
 import com.backend.orbitflow.domain.item.entity.Item;
 import com.backend.orbitflow.global.common.entity.BaseEntity;
 import jakarta.persistence.*;
+import org.hibernate.annotations.OnDelete;
+import org.hibernate.annotations.OnDeleteAction;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
@@ -22,6 +24,7 @@ public class UserItem extends BaseEntity {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "avatar_id", nullable = false)
+    @OnDelete(action = OnDeleteAction.CASCADE)
     private Avatar avatar;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
