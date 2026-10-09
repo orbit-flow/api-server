@@ -52,3 +52,4 @@ Thumbs.db
 ### Log File ###
 /logs
 /logs/*
+/orbitflow/logs/app.log
