@@ -13,7 +13,6 @@ import java.util.Set;
 
 public interface AvatarService {
 
-    Avatar createAvatar(User user);
     AvatarResponse getMyAvatar(User me);
     AvatarResponse getUserAvatar(User target);
     List<UserItemResponse> getMyItems(User me);

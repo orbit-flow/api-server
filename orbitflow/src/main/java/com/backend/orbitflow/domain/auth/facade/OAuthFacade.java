@@ -1,7 +1,6 @@
 package com.backend.orbitflow.domain.auth.facade;
 
 import com.backend.orbitflow.domain.auth.error.AuthErrorCode;
-import com.backend.orbitflow.domain.avatar.service.AvatarService;
 import com.backend.orbitflow.domain.suspension.service.SuspensionService;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.domain.user.enums.UserRole;
@@ -33,7 +32,6 @@ public class OAuthFacade extends DefaultOAuth2UserService {
     private final OAuthService oAuthService;
     private final UserService userService;
     private final SuspensionService suspensionService;
-    private final AvatarService avatarService;
 
     @Override
     @NullMarked
@@ -55,11 +53,8 @@ public class OAuthFacade extends DefaultOAuth2UserService {
                 userService.registerSocialUser(oAuth2UserInfo.getEmail(), oAuth2UserInfo.getName(), oAuth2UserInfo.getProfileUrl())
         );
 
-        if (user.isEmpty()) {
-            oAuthService.link(oAuthUser, oAuth2UserInfo.getProvider(), oAuth2UserInfo.getProviderId());
-            // 소셜 가입 시 기본 아바타와 초기 포인트 지급
-            avatarService.createAvatar(oAuthUser);
-        }
+        // 소셜 가입 시 기본 아바타·초기 포인트는 가입 트랜잭션에서 함께 생성 (UserRegisteredEvent)
+        if (user.isEmpty()) oAuthService.link(oAuthUser, oAuth2UserInfo.getProvider(), oAuth2UserInfo.getProviderId());
         // 정지 계정은 소셜 로그인도 거부 (OAuth2 실패 핸들러로 전달)
         try {
             suspensionService.validateNotSuspended(oAuthUser);

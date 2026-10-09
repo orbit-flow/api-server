@@ -11,7 +11,9 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.backend.orbitflow.domain.user.repository.UserRepository;
 
+import com.backend.orbitflow.domain.user.event.UserRegisteredEvent;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.UUID;
 
@@ -22,6 +24,7 @@ public class UserServiceImpl implements UserService{
 
     private final UserRepository userRepository;
     private final RedisUtil redisUtil;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional(readOnly = true)
     public User getByUuid(String uuid) {
@@ -62,7 +65,7 @@ public class UserServiceImpl implements UserService{
                 name,
                 UserRole.ROLE_USER
         );
-        return userRepository.save(user);
+        return saveNewUser(user);
     }
 
     public User registerSocialUser(String email, String name, String profileImage) {
@@ -75,7 +78,7 @@ public class UserServiceImpl implements UserService{
                 name,
                 profileImage
         );
-        return userRepository.save(user);
+        return saveNewUser(user);
     }
 
     public User updateProfile(String uuid, String name, String profileImage, String introduce, boolean isPrivate) {
@@ -112,5 +115,12 @@ public class UserServiceImpl implements UserService{
     public void updateLastLoginAt(User user) {
         user.updateLastLoginAt();
         userRepository.save(user);
+    }
+
+    // 가입 이벤트로 같은 트랜잭션에서 기본 아바타·초기 포인트 지급 (실패 시 가입도 롤백)
+    private User saveNewUser(User user) {
+        User saved = userRepository.save(user);
+        eventPublisher.publishEvent(new UserRegisteredEvent(saved));
+        return saved;
     }
 }

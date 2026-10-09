@@ -1,6 +1,7 @@
 package com.backend.orbitflow.domain.point.service;
 
 import com.backend.orbitflow.domain.avatar.entity.Avatar;
+import com.backend.orbitflow.domain.avatar.error.AvatarErrorCode;
 import com.backend.orbitflow.domain.avatar.repository.AvatarRepository;
 import com.backend.orbitflow.domain.point.entity.PointTransaction;
 import com.backend.orbitflow.domain.point.enums.PointTransactionType;
@@ -42,7 +43,7 @@ public class PointLedger {
     private final EntityManager entityManager;
 
     // 가입 시 기본 아바타와 초기 포인트 지급 (초기 포인트도 거래로 기록)
-    // 새 행 생성이므로 다른 요청과 경합하지 않음
+    // 가입 트랜잭션(UserRegisteredEvent)과 기존 가입자 보정(AvatarBackfillRunner)에서만 호출
     @Transactional
     public Avatar createAvatar(User user) {
         return avatarRepository.findByUser(user).orElseGet(() -> {
@@ -56,10 +57,12 @@ public class PointLedger {
 
     // 아바타 행 락 획득 후 최신 잔액으로 갱신 (이미 영속성 컨텍스트에 있던 오래된 상태를 사용하지 않음)
     // 같은 트랜잭션에서 다시 호출해도 이미 보유한 락이므로 대기하지 않음
-    // 아바타 기능 이전 가입자는 최초 사용 시 생성 후 락
+    // 아바타는 가입 트랜잭션에서 생성되므로 없으면 오류 (지연 생성으로 인한 동시 생성 경합 없음)
     public Avatar lock(User user) {
         requireReadCommitted();
-        Avatar avatar = avatarRepository.findByUser(user).orElseGet(() -> createAvatar(user));
+        Avatar avatar = avatarRepository.findByUser(user).orElseThrow(
+                () -> new CommonException(AvatarErrorCode.AVATAR_NOT_FOUND)
+        );
         entityManager.refresh(avatar, LockModeType.PESSIMISTIC_WRITE);
         return avatar;
     }

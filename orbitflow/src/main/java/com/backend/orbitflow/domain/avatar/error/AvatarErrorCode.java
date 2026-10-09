@@ -9,6 +9,10 @@ import org.springframework.http.HttpStatus;
 @RequiredArgsConstructor
 public enum AvatarErrorCode implements ErrorCode {
 
+    AVATAR_NOT_FOUND(HttpStatus.NOT_FOUND,
+            "아바타가 존재하지 않습니다.",
+            "https://orbitflow.com/errors/avatar-not-found",
+            "Avatar Not Found"),
     ITEM_NOT_ON_SALE(HttpStatus.BAD_REQUEST,
             "판매 중인 아이템이 아닙니다.",
             "https://orbitflow.com/errors/item-not-on-sale",

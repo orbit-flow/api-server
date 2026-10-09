@@ -38,26 +38,20 @@ public class AvatarServiceImpl implements AvatarService {
     private final PointLedger pointLedger;
     private final ApplicationEventPublisher eventPublisher;
 
-    // 가입 시 기본 아바타와 초기 포인트 지급
-    public Avatar createAvatar(User user) {
-        return pointLedger.createAvatar(user);
-    }
-
     public AvatarResponse getMyAvatar(User me) {
-        Avatar avatar = getOrCreate(me);
+        Avatar avatar = getAvatar(me);
         return AvatarResponse.of(avatar, me, userItemRepository.findEquippedByAvatar(avatar), true);
     }
 
     // 다른 사용자의 아바타는 장착 아이템만 공개 (포인트 비공개)
     @Transactional(readOnly = true)
     public AvatarResponse getUserAvatar(User target) {
-        return avatarRepository.findByUser(target)
-                .map(avatar -> AvatarResponse.of(avatar, target, userItemRepository.findEquippedByAvatar(avatar), false))
-                .orElseGet(() -> AvatarResponse.of(Avatar.of(target), target, List.of(), false));
+        Avatar avatar = getAvatar(target);
+        return AvatarResponse.of(avatar, target, userItemRepository.findEquippedByAvatar(avatar), false);
     }
 
     public List<UserItemResponse> getMyItems(User me) {
-        return userItemRepository.findAllWithItemByAvatar(getOrCreate(me)).stream()
+        return userItemRepository.findAllWithItemByAvatar(getAvatar(me)).stream()
                 .map(UserItemResponse::from)
                 .toList();
     }
@@ -95,7 +89,7 @@ public class AvatarServiceImpl implements AvatarService {
 
     // 같은 부위에 장착된 아이템은 즉시 해제하고 새 아이템 장착
     public UserItemResponse equip(User me, Long itemId) {
-        Avatar avatar = getOrCreate(me);
+        Avatar avatar = getAvatar(me);
         UserItem userItem = getOwnedItem(avatar, itemId);
         userItemRepository.findEquippedByAvatarAndType(avatar, userItem.getItem().getType()).stream()
                 .filter(equipped -> !equipped.getId().equals(userItem.getId()))
@@ -105,13 +99,16 @@ public class AvatarServiceImpl implements AvatarService {
     }
 
     public UserItemResponse unequip(User me, Long itemId) {
-        UserItem userItem = getOwnedItem(getOrCreate(me), itemId);
+        UserItem userItem = getOwnedItem(getAvatar(me), itemId);
         userItem.unequip();
         return UserItemResponse.from(userItem);
     }
 
-    private Avatar getOrCreate(User user) {
-        return avatarRepository.findByUser(user).orElseGet(() -> createAvatar(user));
+    // 아바타는 가입 시 생성되므로 없으면 오류
+    private Avatar getAvatar(User user) {
+        return avatarRepository.findByUser(user).orElseThrow(
+                () -> new CommonException(AvatarErrorCode.AVATAR_NOT_FOUND)
+        );
     }
 
     private UserItem getOwnedItem(Avatar avatar, Long itemId) {
