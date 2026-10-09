@@ -219,7 +219,16 @@ public class NotificationEventListener {
     public void handle(PointEarnedEvent event) {
         userRepository.findById(event.userId()).ifPresent(user ->
                 notificationService.send(user, NotificationType.POINT_EARNED, null, null, null,
-                        "출석 포인트 " + event.amount() + "P가 적립되었습니다. (잔액 " + event.balanceAfter() + "P)"));
+                        event.reason() + " " + event.amount() + "P가 적립되었습니다. (잔액 " + event.balanceAfter() + "P)"));
+    }
+
+    @Async
+    @TransactionalEventListener
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void handle(PointRevokedEvent event) {
+        userRepository.findById(event.userId()).ifPresent(user ->
+                notificationService.send(user, NotificationType.POINT_REVOKED, null, null, null,
+                        "무효 처리된 출석 포인트 " + event.amount() + "P가 회수되었습니다. (잔액 " + event.balanceAfter() + "P)"));
     }
 
     @Async

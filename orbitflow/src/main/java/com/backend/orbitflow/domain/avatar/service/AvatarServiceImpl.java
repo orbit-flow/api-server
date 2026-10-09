@@ -14,12 +14,13 @@ import com.backend.orbitflow.domain.item.repository.ItemRepository;
 import com.backend.orbitflow.domain.notification.event.ItemPurchasedEvent;
 import com.backend.orbitflow.domain.point.entity.PointTransaction;
 import com.backend.orbitflow.domain.point.enums.PointTransactionType;
-import com.backend.orbitflow.domain.point.repository.PointTransactionRepository;
+import com.backend.orbitflow.domain.point.service.PointLedger;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.global.common.error.exception.CommonException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collection;
@@ -34,26 +35,12 @@ public class AvatarServiceImpl implements AvatarService {
     private final AvatarRepository avatarRepository;
     private final UserItemRepository userItemRepository;
     private final ItemRepository itemRepository;
-    private final PointTransactionRepository pointTransactionRepository;
+    private final PointLedger pointLedger;
     private final ApplicationEventPublisher eventPublisher;
 
-    // 가입 시 기본 아바타와 초기 포인트 지급 (초기 포인트도 거래로 기록)
+    // 가입 시 기본 아바타와 초기 포인트 지급
     public Avatar createAvatar(User user) {
-        return avatarRepository.findByUser(user).orElseGet(() -> {
-            Avatar avatar = avatarRepository.save(Avatar.of(user));
-            pointTransactionRepository.save(PointTransaction.of(
-                    user, PointTransactionType.SIGNUP, Avatar.INITIAL_POINT, avatar.getPoint()
-            ));
-            return avatar;
-        });
-    }
-
-    // 포인트 변경용 비관적 락 조회 (아바타 기능 이전 가입자는 최초 사용 시 생성)
-    public Avatar getForUpdate(User user) {
-        return avatarRepository.findByUserForUpdate(user).orElseGet(() -> {
-            createAvatar(user);
-            return avatarRepository.findByUserForUpdate(user).orElseThrow();
-        });
+        return pointLedger.createAvatar(user);
     }
 
     public AvatarResponse getMyAvatar(User me) {
@@ -86,8 +73,10 @@ public class AvatarServiceImpl implements AvatarService {
     }
 
     // 판매 중인 아이템을 가격 이상의 포인트를 보유한 경우에만 구매, 구매 즉시 보유 목록에 추가 (취소·환급 불가)
+    // 아바타 행 락을 먼저 잡고 보유·잔액을 확인하므로 동시 구매(같은 아이템 중복, 잔액 초과)가 직렬화됨
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public PurchaseResponse purchase(User me, Long itemId) {
-        Avatar avatar = getForUpdate(me);
+        Avatar avatar = pointLedger.lock(me);
         Item item = itemRepository.findById(itemId).orElseThrow(
                 () -> new CommonException(ItemErrorCode.ITEM_NOT_FOUND)
         );
@@ -98,15 +87,10 @@ public class AvatarServiceImpl implements AvatarService {
             throw new CommonException(AvatarErrorCode.ALREADY_OWNED_ITEM);
         }
         int price = item.getPrice();
-        if (!avatar.hasPoint(price)) {
-            throw new CommonException(AvatarErrorCode.NOT_ENOUGH_POINT);
-        }
-
-        avatar.addPoint(-price);
+        PointTransaction transaction = pointLedger.withdraw(me, PointTransactionType.USE, price);
         userItemRepository.save(UserItem.of(avatar, item));
-        pointTransactionRepository.save(PointTransaction.of(me, PointTransactionType.USE, -price, avatar.getPoint()));
-        eventPublisher.publishEvent(new ItemPurchasedEvent(me.getId(), item.getId(), price, avatar.getPoint()));
-        return new PurchaseResponse(item.getId(), item.getName(), price, avatar.getPoint());
+        eventPublisher.publishEvent(new ItemPurchasedEvent(me.getId(), item.getId(), price, transaction.getBalanceAfter()));
+        return new PurchaseResponse(item.getId(), item.getName(), price, transaction.getBalanceAfter());
     }
 
     // 같은 부위에 장착된 아이템은 즉시 해제하고 새 아이템 장착

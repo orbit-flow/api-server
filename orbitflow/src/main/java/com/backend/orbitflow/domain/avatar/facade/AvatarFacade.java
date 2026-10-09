@@ -9,6 +9,7 @@ import com.backend.orbitflow.domain.user.service.UserService;
 import com.backend.orbitflow.global.security.AuthUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
@@ -35,7 +36,8 @@ public class AvatarFacade {
         return avatarService.getMyItems(me(authUser));
     }
 
-    @Transactional
+    // 포인트 변경 : READ COMMITTED 필수 (PointLedger 참고)
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public PurchaseResponse purchase(AuthUser authUser, Long itemId) {
         return avatarService.purchase(me(authUser), itemId);
     }
