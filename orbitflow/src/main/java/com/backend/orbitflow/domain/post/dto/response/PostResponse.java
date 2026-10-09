@@ -13,6 +13,10 @@ public record PostResponse(
         Long id,
         String content,
         List<String> imageUrls,
+        long likeCount,
+        long commentCount,
+        // 요청자가 좋아요를 눌렀는지
+        boolean liked,
         Author author,
         TodoInfo todo,
         @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
@@ -28,7 +32,7 @@ public record PostResponse(
     public record TodoInfo(Long id, Long categoryId, String name, boolean isCompleted, boolean deleted) {
     }
 
-    public static PostResponse of(Post post, List<PostImage> images) {
+    public static PostResponse of(Post post, List<PostImage> images, long likeCount, long commentCount, boolean liked) {
         User user = post.getUser();
         Todo todo = post.getTodo();
         return new PostResponse(
@@ -37,6 +41,9 @@ public record PostResponse(
                 images.stream()
                         .map(PostImage::getImageUrl)
                         .toList(),
+                likeCount,
+                commentCount,
+                liked,
                 new Author(user.getUuid(), user.getName(), user.getProfileImage()),
                 new TodoInfo(todo.getId(), todo.getCategory().getId(), todo.getName(), todo.isCompleted(), todo.isDeleted()),
                 post.getCreatedAt(),

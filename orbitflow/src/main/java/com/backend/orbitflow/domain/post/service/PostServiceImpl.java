@@ -3,6 +3,8 @@ package com.backend.orbitflow.domain.post.service;
 import com.backend.orbitflow.domain.block.service.BlockService;
 import com.backend.orbitflow.domain.category.entity.Category;
 import com.backend.orbitflow.domain.comment.repository.CommentRepository;
+import com.backend.orbitflow.domain.like.repository.PostLikeRepository;
+import com.backend.orbitflow.domain.post.dto.PostCount;
 import com.backend.orbitflow.domain.category.service.CategoryAuthorityService;
 import com.backend.orbitflow.domain.category.service.CategoryService;
 import com.backend.orbitflow.domain.post.dto.response.PostResponse;
@@ -54,6 +56,7 @@ public class PostServiceImpl implements PostService {
     private final BlockService blockService;
     private final S3Service s3Service;
     private final CommentRepository commentRepository;
+    private final PostLikeRepository postLikeRepository;
 
     // 게시글을 조회할 수 있는 사용자만 댓글·대댓글·좋아요 가능
     @Transactional(readOnly = true)
@@ -76,14 +79,14 @@ public class PostServiceImpl implements PostService {
         Post post = postRepository.save(Post.of(todo, actor, content));
         List<PostImage> postImages = saveImages(post, upload(files), 0);
         // TODO: 알림 도메인 구현 후 팔로워에게 NEWPOST 알림, 타임라인 노출
-        return PostResponse.of(post, postImages);
+        return PostResponse.of(post, postImages, 0, 0, false);
     }
 
     @Transactional(readOnly = true)
     public PostResponse getPost(User viewer, Long postId) {
         Post post = getActivePost(postId);
         checkView(post, viewer);
-        return PostResponse.of(post, postImageRepository.findAllByPostOrderBySortOrderAsc(post));
+        return toResponse(post, postImageRepository.findAllByPostOrderBySortOrderAsc(post), viewer);
     }
 
     // 투두가 삭제되어도 게시글은 조회 가능
@@ -96,7 +99,7 @@ public class PostServiceImpl implements PostService {
         if (!categoryAuthorityService.canView(category, viewer)) {
             throw new CommonException(PostErrorCode.POST_ACCESS_DENIED);
         }
-        return toResponses(postRepository.findAllByTodo(todo, viewer, toPageable(page, size)));
+        return toResponses(postRepository.findAllByTodo(todo, viewer, toPageable(page, size)), viewer);
     }
 
     // 작성자의 게시글 중 viewer가 열람 가능한 카테고리의 게시글만
@@ -110,7 +113,7 @@ public class PostServiceImpl implements PostService {
         if (viewableIds.isEmpty()) {
             return Page.empty(pageable);
         }
-        return toResponses(postRepository.findAllByAuthorAndCategoryIdIn(author, viewableIds, pageable));
+        return toResponses(postRepository.findAllByAuthorAndCategoryIdIn(author, viewableIds, pageable), viewer);
     }
 
     // 유지할 사진을 요청 순서대로 두고 새 사진을 뒤에 추가, 빠진 사진은 커밋 후 S3에서 삭제
@@ -144,17 +147,17 @@ public class PostServiceImpl implements PostService {
         }
         result.addAll(saveImages(post, upload(files), keepImageUrls.size()));
         post.updateContent(content);
-        return PostResponse.of(post, result);
+        return toResponse(post, result, actor);
     }
 
-    // 게시글 삭제 시 사진(및 댓글)을 같은 시점에 함께 삭제
+    // 게시글 삭제 시 사진·댓글·좋아요를 같은 시점에 함께 삭제
     public void deletePost(User actor, Long postId) {
         Post post = getActivePost(postId);
         checkAuthor(post, actor);
         List<String> imageUrls = postImageRepository.findAllByPostOrderBySortOrderAsc(post).stream()
                 .map(PostImage::getImageUrl)
                 .toList();
-        // TODO: 좋아요 도메인 구현 후 함께 삭제
+        postLikeRepository.deleteAllByPost(post);
         commentRepository.deleteAllRepliesByPost(post);
         commentRepository.deleteAllByPost(post);
         postImageRepository.deleteAllByPost(post);
@@ -218,13 +221,39 @@ public class PostServiceImpl implements PostService {
         return ids;
     }
 
-    private Page<PostResponse> toResponses(Page<Post> posts) {
+    private PostResponse toResponse(Post post, List<PostImage> images, User viewer) {
+        return PostResponse.of(
+                post,
+                images,
+                postLikeRepository.countByPost(post),
+                commentRepository.countByPost(post),
+                postLikeRepository.existsByPostAndUser(post, viewer)
+        );
+    }
+
+    // 사진, 좋아요·댓글 수, 요청자의 좋아요 여부를 게시글 묶음 단위로 조회
+    private Page<PostResponse> toResponses(Page<Post> posts, User viewer) {
         if (posts.isEmpty()) {
-            return posts.map(post -> PostResponse.of(post, List.of()));
+            return posts.map(post -> PostResponse.of(post, List.of(), 0, 0, false));
         }
-        Map<Long, List<PostImage>> imagesByPost = postImageRepository.findAllByPostInOrderBySortOrderAsc(posts.getContent()).stream()
+        List<Post> content = posts.getContent();
+        Map<Long, List<PostImage>> imagesByPost = postImageRepository.findAllByPostInOrderBySortOrderAsc(content).stream()
                 .collect(Collectors.groupingBy(image -> image.getPost().getId()));
-        return posts.map(post -> PostResponse.of(post, imagesByPost.getOrDefault(post.getId(), List.of())));
+        Map<Long, Long> likeCounts = toCountMap(postLikeRepository.countByPostIn(content));
+        Map<Long, Long> commentCounts = toCountMap(commentRepository.countByPostIn(content));
+        Set<Long> likedIds = postLikeRepository.findLikedPostIds(content, viewer);
+        return posts.map(post -> PostResponse.of(
+                post,
+                imagesByPost.getOrDefault(post.getId(), List.of()),
+                likeCounts.getOrDefault(post.getId(), 0L),
+                commentCounts.getOrDefault(post.getId(), 0L),
+                likedIds.contains(post.getId())
+        ));
+    }
+
+    private Map<Long, Long> toCountMap(List<PostCount> counts) {
+        return counts.stream()
+                .collect(Collectors.toMap(PostCount::postId, PostCount::count));
     }
 
     private List<PostImage> saveImages(Post post, List<String> urls, int startOrder) {

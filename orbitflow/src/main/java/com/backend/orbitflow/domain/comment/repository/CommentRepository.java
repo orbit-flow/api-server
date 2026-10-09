@@ -1,6 +1,7 @@
 package com.backend.orbitflow.domain.comment.repository;
 
 import com.backend.orbitflow.domain.comment.entity.Comment;
+import com.backend.orbitflow.domain.post.dto.PostCount;
 import com.backend.orbitflow.domain.post.entity.Post;
 import com.backend.orbitflow.domain.user.entity.User;
 import org.springframework.data.domain.Page;
@@ -15,6 +16,16 @@ import java.util.List;
 import java.util.Optional;
 
 public interface CommentRepository extends JpaRepository<Comment, Long> {
+
+    long countByPost(Post post);
+
+    @Query("""
+            select new com.backend.orbitflow.domain.post.dto.PostCount(c.post.id, count(c))
+            from Comment c
+            where c.post in :posts
+            group by c.post.id
+            """)
+    List<PostCount> countByPostIn(@Param("posts") Collection<Post> posts);
 
     @Query("""
             select c from Comment c
