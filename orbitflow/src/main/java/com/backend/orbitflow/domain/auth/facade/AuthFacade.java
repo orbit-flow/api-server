@@ -8,12 +8,14 @@ import com.backend.orbitflow.domain.auth.dto.response.EmailVarifyResponse;
 import com.backend.orbitflow.domain.auth.dto.response.TokenResponse;
 import com.backend.orbitflow.domain.auth.service.AuthService;
 import com.backend.orbitflow.domain.auth.service.TokenService;
+import com.backend.orbitflow.domain.suspension.service.SuspensionService;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.domain.user.service.UserService;
 import com.backend.orbitflow.global.security.AuthUser;
 import com.backend.orbitflow.global.util.EmailService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 @Component
 @RequiredArgsConstructor
@@ -23,10 +25,14 @@ public class AuthFacade{
     private final TokenService tokenService;
     private final UserService userService;
     private final EmailService emailService;
+    private final SuspensionService suspensionService;
 
+    // 정지 계정은 정지 사유·기간과 함께 로그인 거부 (만료된 정지는 즉시 해제)
+    @Transactional
     public TokenResponse login(LoginRequest request) {
         User user = userService.getByEmail(request.email());
         authService.authenticate(user, request.password());
+        suspensionService.validateNotSuspended(user);
         userService.updateLastLoginAt(user);
         return TokenResponse.of(
                 tokenService.createAccessToken(user.getUuid(), user.getEmail(), user.getRole()),

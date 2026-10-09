@@ -56,6 +56,8 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.POST, "/api/users").permitAll()
                 .requestMatchers("/", "/*.html", "/css/**", "/js/**").permitAll()
 
+                // 플랫폼 운영 관리 기능은 관리자만
+                .requestMatchers("/api/admin/**").hasRole("ADMIN")
                 .requestMatchers("/api/**").authenticated()
         );
 

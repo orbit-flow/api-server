@@ -1,6 +1,7 @@
 package com.backend.orbitflow.domain.auth.facade;
 
 import com.backend.orbitflow.domain.auth.error.AuthErrorCode;
+import com.backend.orbitflow.domain.suspension.service.SuspensionService;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.domain.user.enums.UserRole;
 import com.backend.orbitflow.domain.user.oauth.*;
@@ -13,6 +14,7 @@ import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.client.userinfo.DefaultOAuth2UserService;
 import org.springframework.security.oauth2.client.userinfo.OAuth2UserRequest;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
+import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.user.DefaultOAuth2User;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.stereotype.Component;
@@ -29,6 +31,7 @@ public class OAuthFacade extends DefaultOAuth2UserService {
 
     private final OAuthService oAuthService;
     private final UserService userService;
+    private final SuspensionService suspensionService;
 
     @Override
     @NullMarked
@@ -51,6 +54,12 @@ public class OAuthFacade extends DefaultOAuth2UserService {
         );
 
         if (user.isEmpty()) oAuthService.link(oAuthUser, oAuth2UserInfo.getProvider(), oAuth2UserInfo.getProviderId());
+        // 정지 계정은 소셜 로그인도 거부 (OAuth2 실패 핸들러로 전달)
+        try {
+            suspensionService.validateNotSuspended(oAuthUser);
+        } catch (CommonException e) {
+            throw new OAuth2AuthenticationException(new OAuth2Error("account_suspended"), e.getMessage());
+        }
         userService.updateLastLoginAt(oAuthUser);
 
         Map<String, Object> attributes = Map.of("uuid", oAuthUser.getUuid());

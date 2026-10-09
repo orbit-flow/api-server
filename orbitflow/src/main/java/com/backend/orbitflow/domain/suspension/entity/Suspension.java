@@ -50,4 +50,38 @@ public class Suspension extends BaseEntity {
 
     @Column(name = "released_at")
     private LocalDateTime releasedAt;
+
+    public static Suspension of(User user, String reason, LocalDateTime expiresAt, User suspendedBy) {
+        return new Suspension(
+                null, user, SuspensionStatus.ACTIVE, reason, expiresAt, suspendedBy, null, null, null
+        );
+    }
+
+    public boolean isActive() {
+        return this.state == SuspensionStatus.ACTIVE;
+    }
+
+    public boolean isPermanent() {
+        return this.expiresAt == null;
+    }
+
+    public boolean isExpiredAt(LocalDateTime now) {
+        return isActive() && !isPermanent() && !this.expiresAt.isAfter(now);
+    }
+
+    public void updateSuspension(String reason, LocalDateTime expiresAt) {
+        this.reason = reason;
+        this.expiresAt = expiresAt;
+    }
+
+    public void release(User releasedBy, String releasedReason) {
+        this.state = SuspensionStatus.RELEASED;
+        this.releasedBy = releasedBy;
+        this.releasedReason = releasedReason;
+        this.releasedAt = LocalDateTime.now();
+    }
+
+    public void expire() {
+        this.state = SuspensionStatus.EXPIRED;
+    }
 }

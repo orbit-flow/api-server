@@ -30,6 +30,14 @@ public class UserServiceImpl implements UserService{
         );
     }
 
+    // 정지 계정 포함 조회 (관리자 정지 처리용)
+    @Transactional(readOnly = true)
+    public User getByUuidIncludingBanned(String uuid) {
+        return userRepository.findByUuidAndDeletedAtIsNull(uuid).orElseThrow(
+                () -> new CommonException(UserErrorCode.USER_NOT_FOUND)
+        );
+    }
+
     @Transactional(readOnly = true)
     public User getByEmail(String email) {
         return userRepository.findByEmail(email).orElseThrow(

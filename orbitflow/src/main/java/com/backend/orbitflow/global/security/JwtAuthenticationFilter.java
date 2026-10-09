@@ -11,6 +11,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.ObjectUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+import com.backend.orbitflow.domain.suspension.cache.SuspendedUserCache;
+import com.backend.orbitflow.domain.suspension.error.SuspensionErrorCode;
 import com.backend.orbitflow.global.common.dto.response.CommonResponse;
 import com.backend.orbitflow.global.common.error.ErrorCode;
 import com.backend.orbitflow.global.error.GlobalErrorCode;
@@ -37,6 +39,7 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter{
     private final JwtProvider jwtProvider;
     private final ObjectMapper objectMapper;
     private final StringRedisTemplate redisTemplate;
+    private final SuspendedUserCache suspendedUserCache;
 
 
     @Override
@@ -55,6 +58,11 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter{
 
             try {
                 Claims info = jwtProvider.getUserInfoFromToken(tokenValue);
+                // 정지 계정은 이미 발급된 토큰으로도 접근 불가
+                if (suspendedUserCache.isSuspended(info.getSubject())) {
+                    sendErrorResponse(request, response, SuspensionErrorCode.ACCOUNT_SUSPENDED);
+                    return;
+                }
                 setAuthentication(info);
             } catch (SecurityException | MalformedJwtException e) {
                 log.error("유효하지 않은 JWT 서명입니다.", e);
