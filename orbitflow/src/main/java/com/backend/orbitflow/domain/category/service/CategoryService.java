@@ -2,6 +2,7 @@ package com.backend.orbitflow.domain.category.service;
 
 import com.backend.orbitflow.domain.category.dto.response.CategoryPermissionResponse;
 import com.backend.orbitflow.domain.category.dto.response.CategoryResponse;
+import com.backend.orbitflow.domain.category.entity.Category;
 import com.backend.orbitflow.domain.category.enums.Visibility;
 import com.backend.orbitflow.domain.team.entity.Team;
 import com.backend.orbitflow.domain.user.entity.User;
@@ -10,6 +11,7 @@ import java.util.List;
 
 public interface CategoryService {
 
+    Category getActiveCategory(Long categoryId);
     CategoryResponse createPersonalCategory(User user, String name, String color, Visibility visibility);
     CategoryResponse createTeamCategory(Team team, User actor, String name, String color, Visibility visibility);
     List<CategoryResponse> getMyCategories(User me);

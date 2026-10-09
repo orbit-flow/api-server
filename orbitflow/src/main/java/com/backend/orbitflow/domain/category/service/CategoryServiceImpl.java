@@ -15,6 +15,7 @@ import com.backend.orbitflow.domain.team.enums.TeamPermission;
 import com.backend.orbitflow.domain.team.error.TeamErrorCode;
 import com.backend.orbitflow.domain.team.repository.TeamRoleRepository;
 import com.backend.orbitflow.domain.team.service.TeamAuthorityService;
+import com.backend.orbitflow.domain.todo.repository.TodoRepository;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.global.common.error.exception.CommonException;
 import lombok.RequiredArgsConstructor;
@@ -36,6 +37,7 @@ public class CategoryServiceImpl implements CategoryService {
     private final CategoryAuthorityService categoryAuthorityService;
     private final TeamAuthorityService teamAuthorityService;
     private final TeamRoleRepository teamRoleRepository;
+    private final TodoRepository todoRepository;
 
     public CategoryResponse createPersonalCategory(User user, String name, String color, Visibility visibility) {
         return CategoryResponse.from(categoryRepository.save(Category.personal(user, name, color, visibility)));
@@ -91,7 +93,7 @@ public class CategoryServiceImpl implements CategoryService {
         Category moveTo = categoryRepository.findWithOwnerById(moveToCategoryId)
                 .filter(category::isSameOwner)
                 .orElseThrow(() -> new CommonException(CategoryErrorCode.INVALID_MOVE_TARGET));
-        // TODO: 투두 도메인 구현 후 category의 모든 투두를 moveTo로 이동
+        todoRepository.moveAllToCategory(category, moveTo);
         categoryPermissionRepository.deleteAllByCategory(category);
         categoryRepository.deleteById(category.getId());
     }
@@ -128,7 +130,8 @@ public class CategoryServiceImpl implements CategoryService {
     }
 
     // 소유자가 탈퇴했거나 팀이 삭제된 카테고리는 존재하지 않는 것으로 처리
-    private Category getActiveCategory(Long categoryId) {
+    @Transactional(readOnly = true)
+    public Category getActiveCategory(Long categoryId) {
         Category category = categoryRepository.findWithOwnerById(categoryId).orElseThrow(
                 () -> new CommonException(CategoryErrorCode.CATEGORY_NOT_FOUND)
         );
