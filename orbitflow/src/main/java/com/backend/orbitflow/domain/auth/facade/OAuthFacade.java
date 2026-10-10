@@ -62,9 +62,11 @@ public class OAuthFacade extends DefaultOAuth2UserService {
         Optional<User> user = oAuthService.findUser(oAuth2UserInfo.getProvider(), oAuth2UserInfo.getProviderId());
         User oAuthUser;
         try {
-            oAuthUser = user.orElseGet(() ->
-                    userService.registerSocialUser(oAuth2UserInfo.getEmail(), oAuth2UserInfo.getName(), oAuth2UserInfo.getProfileUrl())
-            );
+            // 처음 보는 소셜 계정은 가입 : 탈퇴한 계정이 점유한 이메일은 그 계정의 식별정보·소셜 연결을 지워 풀어 줌 (재가입 허용)
+            oAuthUser = user.orElseGet(() -> {
+                userService.releaseWithdrawnEmail(oAuth2UserInfo.getEmail()).ifPresent(oAuthService::unlinkAll);
+                return userService.registerSocialUser(oAuth2UserInfo.getEmail(), oAuth2UserInfo.getName(), oAuth2UserInfo.getProfileUrl());
+            });
         } catch (CommonException e) {
             // 같은 이메일로 가입된 계정이 있으면 500 대신 FE 로그인 화면으로 (OAuth2 실패 핸들러로 전달)
             throw new OAuth2AuthenticationException(new OAuth2Error("email_already_registered"), e.getMessage());

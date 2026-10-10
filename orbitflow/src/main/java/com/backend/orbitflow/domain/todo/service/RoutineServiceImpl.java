@@ -16,8 +16,10 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -46,7 +48,6 @@ public class RoutineServiceImpl implements RoutineService {
     private final TodoReminderQueue todoReminderQueue;
     private final RoutineRepository routineRepository;
     private final TodoRepository todoRepository;
-    private final TodoAuthorityService todoAuthorityService;
     private final PlatformTransactionManager transactionManager;
 
     private static final int GENERATION_CHUNK_SIZE = 200;
@@ -208,11 +209,15 @@ public class RoutineServiceImpl implements RoutineService {
         routineRepository.deleteById(routine.getId());
     }
 
-    // 미리보기 회차에 작업을 요청하면 해당 회차를 즉시 생성
-    public TodoResponse createOccurrence(User actor, Long routineId, LocalDateTime startDate) {
-        Routine routine = routineRepository.findWithTodoById(routineId)
+    // 원본 투두(카테고리)와 함께 조회 : 권한 확인은 호출 측에서 이 투두의 카테고리로 수행
+    @Transactional(readOnly = true)
+    public Routine getRoutine(Long routineId) {
+        return routineRepository.findWithTodoById(routineId)
                 .orElseThrow(() -> new CommonException(TodoErrorCode.ROUTINE_NOT_FOUND));
-        todoAuthorityService.checkEdit(routine.getTodo().getCategory(), actor);
+    }
+
+    // 미리보기 회차에 작업을 요청하면 해당 회차를 즉시 생성 (권한 확인은 호출 측)
+    public TodoResponse createOccurrence(Routine routine, LocalDateTime startDate) {
         // 생성 기준(1개월 뒤)을 넘거나 지나간(오늘 이전) 회차를 임의로 만들어 낼 수 없음
         if (!routine.isOccurrence(startDate) || startDate.isAfter(horizon()) || startDate.isBefore(startOfToday())) {
             throw new CommonException(TodoErrorCode.NOT_ROUTINE_OCCURRENCE);
@@ -247,6 +252,15 @@ public class RoutineServiceImpl implements RoutineService {
         occurrencesByRoutine.forEach((routine, occurrences) -> occurrences.stream()
                 .filter(start -> !existing.getOrDefault(routine.getId(), Set.of()).contains(start))
                 .forEach(start -> previews.add(DashboardTodoResponse.preview(routine, start))));
+        return previews;
+    }
+
+    // 아직 생성되지 않은 반복 회차 (선택일 하루, 시작 시각 → 반복 id 순)
+    @Transactional(readOnly = true)
+    public List<DashboardTodoResponse> getDashboardPreviews(User me, LocalDate date) {
+        LocalDateTime from = date.atStartOfDay();
+        List<DashboardTodoResponse> previews = new ArrayList<>(getPreviews(me, from, from.plusDays(1)));
+        previews.sort(Comparator.comparing(DashboardTodoResponse::startDate).thenComparing(DashboardTodoResponse::routineId));
         return previews;
     }
 

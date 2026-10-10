@@ -13,7 +13,7 @@ import java.util.Set;
 
 public interface CategoryRepository extends JpaRepository<Category, Long> {
 
-    // 개인 카테고리 c(소유자 cu)를 :viewerId 사용자가 볼 수 있는지 (CategoryAuthorityService.filterViewablePersonal과 같은 규칙)
+    // 개인 카테고리 c(소유자 cu)를 :viewerId 사용자가 볼 수 있는지 (CategoryAuthorityService.canViewPersonal과 같은 규칙)
     // 본인 전체, 차단 관계면 없음, 수락된 팔로워면 PUBLIC·FOLLOWER, 아니면 공개계정의 PUBLIC만 (비밀계정은 PUBLIC도 FOLLOWER로 제한)
     String PERSONAL_CATEGORY_VIEWABLE = """
             (c.user_id = :viewerId
@@ -26,7 +26,7 @@ public interface CategoryRepository extends JpaRepository<Category, Long> {
                                       where f.followee_id = c.user_id and f.follower_id = :viewerId and f.status = 'ACCEPTED')))))
             """;
 
-    // 팀 카테고리 c를 :viewerId 사용자가 볼 수 있는지 (CategoryAuthorityService.filterViewableTeam과 같은 규칙)
+    // 팀 카테고리 c를 :viewerId 사용자가 볼 수 있는지 (CategoryAuthorityService.canViewTeam과 같은 규칙)
     // PUBLIC 누구나, FOLLOWER 팀 구성원, PRIVATE 팀 소유자·카테고리 관리 권한(비트 8) 보유자·본인 또는 본인 역할에 열람 허용된 경우
     String TEAM_CATEGORY_VIEWABLE = """
             (c.visibility = 'PUBLIC'

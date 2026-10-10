@@ -6,7 +6,6 @@ import com.backend.orbitflow.domain.team.entity.TeamRole;
 import com.backend.orbitflow.domain.team.enums.TeamPermission;
 import com.backend.orbitflow.domain.team.error.TeamErrorCode;
 import com.backend.orbitflow.domain.team.repository.TeamRoleRepository;
-import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.global.common.error.exception.CommonException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -25,47 +24,41 @@ import org.springframework.data.domain.PageRequest;
 public class TeamRoleServiceImpl implements TeamRoleService {
 
     private final TeamRoleRepository teamRoleRepository;
-    private final TeamAuthorityService teamAuthorityService;
 
     @Transactional(readOnly = true)
-    public Page<TeamRoleResponse> getRoles(Team team, User me, int page, int size) {
+    public Page<TeamRoleResponse> getRoles(Team team, int page, int size) {
         Pageable pageable = toPageable(page, size);
-        teamAuthorityService.getMember(team, me);
         return teamRoleRepository.findAllByTeamOrderByPriorityDescIdAsc(team, pageable).map(TeamRoleResponse::from);
     }
 
-    public TeamRoleResponse createRole(Team team, User actor, String name, String color, int priority, List<TeamPermission> permissions) {
-        teamAuthorityService.checkPermission(team, actor, TeamPermission.MANAGE_ROLES);
+    public TeamRoleResponse createRole(Team team, int actorMask, String name, String color, int priority, List<TeamPermission> permissions) {
         int mask = TeamPermission.toMask(permissions);
-        teamAuthorityService.checkGrantable(team, actor, mask);
+        validateGrantable(actorMask, mask);
         return TeamRoleResponse.from(teamRoleRepository.save(TeamRole.of(team, name, color, priority, mask)));
     }
 
     // 기존 권한과 새 권한 모두 요청자가 보유해야 함 (보유하지 않은 권한의 추가·회수 방지)
-    public TeamRoleResponse updateRole(Team team, User actor, Long roleId, String name, String color, int priority, List<TeamPermission> permissions) {
-        teamAuthorityService.checkPermission(team, actor, TeamPermission.MANAGE_ROLES);
+    public TeamRoleResponse updateRole(Team team, int actorMask, Long roleId, String name, String color, int priority, List<TeamPermission> permissions) {
         TeamRole role = getRole(team, roleId);
         int mask = TeamPermission.toMask(permissions);
-        teamAuthorityService.checkGrantable(team, actor, role.getPermissionsMask() | mask);
+        validateGrantable(actorMask, role.getPermissionsMask() | mask);
         role.updateRole(name, color, priority, mask);
         return TeamRoleResponse.from(role);
     }
 
-    public void deleteRole(Team team, User actor, Long roleId) {
-        teamAuthorityService.checkPermission(team, actor, TeamPermission.MANAGE_ROLES);
+    public void deleteRole(Team team, int actorMask, Long roleId) {
         TeamRole role = getRole(team, roleId);
         if (role.isDefault()) {
             throw new CommonException(TeamErrorCode.DEFAULT_ROLE_DELETE);
         }
-        teamAuthorityService.checkGrantable(team, actor, role.getPermissionsMask());
+        validateGrantable(actorMask, role.getPermissionsMask());
         teamRoleRepository.deleteById(role.getId());   // 역할 부여·역할 열람 권한은 DB가 연쇄 삭제
     }
 
     // 팀당 기본 역할은 1개, 이후 초대 수락자부터 적용 (기존 구성원의 역할은 변경하지 않음)
-    public TeamRoleResponse updateDefaultRole(Team team, User actor, Long roleId) {
-        teamAuthorityService.checkPermission(team, actor, TeamPermission.MANAGE_ROLES);
+    public TeamRoleResponse updateDefaultRole(Team team, int actorMask, Long roleId) {
         TeamRole role = getRole(team, roleId);
-        teamAuthorityService.checkGrantable(team, actor, role.getPermissionsMask());
+        validateGrantable(actorMask, role.getPermissionsMask());
         teamRoleRepository.findByTeamAndIsDefaultTrue(team)
                 .ifPresent(previous -> previous.updateDefault(false));
         role.updateDefault(true);
@@ -76,6 +69,13 @@ public class TeamRoleServiceImpl implements TeamRoleService {
     @Transactional(readOnly = true)
     public List<TeamRole> findRoles(Team team, Collection<Long> roleIds) {
         return roleIds.isEmpty() ? List.of() : teamRoleRepository.findAllByTeamAndIdIn(team, roleIds);
+    }
+
+    // 권한 상승 방지 : 요청자가 보유하지 않은 권한이 포함된 역할은 생성·수정·삭제·기본 지정할 수 없음
+    private void validateGrantable(int actorMask, int mask) {
+        if (!TeamPermission.contains(actorMask, mask)) {
+            throw new CommonException(TeamErrorCode.CANNOT_GRANT_PERMISSION);
+        }
     }
 
     private TeamRole getRole(Team team, Long roleId) {

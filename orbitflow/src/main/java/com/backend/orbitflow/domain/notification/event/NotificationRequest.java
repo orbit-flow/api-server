@@ -14,7 +14,7 @@ import java.util.Map;
  *
  * <ul>
  *   <li>receivers : 수신자 id → uuid (탈퇴·정지 사용자는 만드는 시점에 제외)</li>
- *   <li>actor : 행위자 (없으면 null), 본인·차단 관계·이미 발송한 토글성 활동 제외는 NotificationService에서 판정</li>
+ *   <li>actor : 행위자 (없으면 null), 차단 관계 제외는 NotificationEventListener, 본인·이미 발송한 토글성 활동 제외는 NotificationService에서 판정</li>
  * </ul>
  */
 public record NotificationRequest(

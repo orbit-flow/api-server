@@ -4,7 +4,6 @@ import com.backend.orbitflow.domain.team.dto.response.TeamInvitationResponse;
 import com.backend.orbitflow.domain.team.entity.Team;
 import com.backend.orbitflow.domain.team.entity.TeamInvitation;
 import com.backend.orbitflow.domain.team.enums.TeamInvitationStatus;
-import com.backend.orbitflow.domain.team.enums.TeamPermission;
 import com.backend.orbitflow.domain.team.error.TeamErrorCode;
 import com.backend.orbitflow.domain.team.repository.TeamInvitationRepository;
 import com.backend.orbitflow.domain.team.repository.TeamMemberRepository;
@@ -28,12 +27,9 @@ public class TeamInvitationServiceImpl implements TeamInvitationService {
 
     private final TeamInvitationRepository teamInvitationRepository;
     private final TeamMemberRepository teamMemberRepository;
-    private final TeamAuthorityService teamAuthorityService;
-    private final TeamMemberService teamMemberService;
-    private final TeamService teamService;
 
+    // 초대 권한(MANAGE_MEMBERS) 확인은 호출 측에서 끝낸 뒤 호출
     public TeamInvitationResponse invite(Team team, User inviter, User invitee) {
-        teamAuthorityService.checkPermission(team, inviter, TeamPermission.MANAGE_MEMBERS);
         if (inviter.getId().equals(invitee.getId())) {
             throw new CommonException(TeamErrorCode.SELF_INVITE);
         }
@@ -57,15 +53,13 @@ public class TeamInvitationServiceImpl implements TeamInvitationService {
     }
 
     @Transactional(readOnly = true)
-    public Page<TeamInvitationResponse> getTeamInvitations(Team team, User actor, int page, int size) {
+    public Page<TeamInvitationResponse> getTeamInvitations(Team team, int page, int size) {
         Pageable pageable = toPageable(page, size);
-        teamAuthorityService.checkPermission(team, actor, TeamPermission.MANAGE_MEMBERS);
         return teamInvitationRepository.findPendingByTeam(team, expirationCutoff(), pageable).map(TeamInvitationResponse::from);
     }
 
     // 수락 전 초대는 언제든 즉시 취소 가능, 취소된 초대는 이후 수락 불가
-    public void cancelInvitation(Team team, User actor, String invitationUuid) {
-        teamAuthorityService.checkPermission(team, actor, TeamPermission.MANAGE_MEMBERS);
+    public void cancelInvitation(Team team, String invitationUuid) {
         TeamInvitation invitation = getInvitation(invitationUuid);
         if (!invitation.getTeam().getId().equals(team.getId())) {
             throw new CommonException(TeamErrorCode.INVITATION_NOT_FOUND);
@@ -80,12 +74,16 @@ public class TeamInvitationServiceImpl implements TeamInvitationService {
         return teamInvitationRepository.findPendingByInvitee(me, expirationCutoff(), pageable).map(TeamInvitationResponse::from);
     }
 
-    public TeamInvitationResponse acceptInvitation(User me, String invitationUuid) {
+    // 초대 행을 잠근 뒤 수락 가능 여부 검증 (이후 팀 행 잠금·구성원 가입은 호출 측에서 진행 : 초대 행 → 팀 행 순서)
+    public TeamInvitation getAcceptableInvitation(User me, String invitationUuid) {
         TeamInvitation invitation = getMyInvitation(me, invitationUuid);
         validatePending(invitation);
         validateNotExpired(invitation);
-        // 팀 행을 잠가 동시에 진행되는 팀 삭제와 직렬화 (삭제된 팀에 구성원이 남지 않도록)
-        teamMemberService.joinTeam(teamService.lockActiveTeam(invitation.getTeam()), me);
+        return invitation;
+    }
+
+    // 구성원 가입까지 끝난 뒤 호출
+    public TeamInvitationResponse acceptInvitation(TeamInvitation invitation) {
         invitation.accept();
         return TeamInvitationResponse.from(invitation);
     }

@@ -1,12 +1,9 @@
 package com.backend.orbitflow.domain.team.service;
 
-import com.backend.orbitflow.domain.category.service.CategoryService;
-import com.backend.orbitflow.domain.chat.service.ChatroomService;
 import com.backend.orbitflow.domain.team.dto.response.TeamResponse;
 import com.backend.orbitflow.domain.team.entity.Team;
 import com.backend.orbitflow.domain.team.entity.TeamMember;
 import com.backend.orbitflow.domain.team.entity.TeamRole;
-import com.backend.orbitflow.domain.team.enums.TeamPermission;
 import com.backend.orbitflow.domain.team.error.TeamErrorCode;
 import com.backend.orbitflow.domain.team.repository.TeamInvitationRepository;
 import com.backend.orbitflow.domain.team.repository.TeamMemberRepository;
@@ -38,9 +35,6 @@ public class TeamServiceImpl implements TeamService {
     private final TeamRoleRepository teamRoleRepository;
     private final TeamMemberRoleRepository teamMemberRoleRepository;
     private final TeamInvitationRepository teamInvitationRepository;
-    private final TeamAuthorityService teamAuthorityService;
-    private final CategoryService categoryService;
-    private final ChatroomService chatroomService;
     private final EntityManager entityManager;
 
     @Transactional(readOnly = true)
@@ -88,26 +82,29 @@ public class TeamServiceImpl implements TeamService {
         );
     }
 
-    // 소유자 또는 MANAGE_TEAM 권한 보유자(팀 관리자)
-    public void updateTeam(User user, String uuid, String name, String icon) {
-        Team team = getActiveTeam(uuid);
-        teamAuthorityService.checkPermission(team, user, TeamPermission.MANAGE_TEAM);
+    // 권한(소유자 또는 MANAGE_TEAM 권한 보유자) 확인은 호출 측에서 끝낸 뒤 호출
+    public void updateTeam(Team team, String name, String icon) {
         team.updateTeamInfo(name, icon);
     }
 
-    // 논리적 삭제 후 30일간 보관, 모든 구성원의 소속 해제 및 대기 중인 초대 취소 (역할은 복구를 위해 유지)
+    // 논리적 삭제 후 30일간 보관 (역할은 복구를 위해 유지), 구성원 소속 해제는 removeTeamMembers
+    // 팀 행을 잠그므로 호출 측은 READ_COMMITTED 트랜잭션이어야 하며, 같은 트랜잭션에서 removeTeamMembers까지 이어서 호출
     @Transactional(isolation = Isolation.READ_COMMITTED)
-    public void deleteTeam(User user, String uuid) {
+    public Team deleteTeam(User user, String uuid) {
         Team team = lockActiveTeam(getActiveTeam(uuid));
         if (!team.isOwner(user)) {
             throw new CommonException(TeamErrorCode.NOT_TEAM_OWNER);
         }
         team.delete();
         teamMemberRoleRepository.deleteAllByTeam(team);
-        categoryService.deleteAllMemberPermissionsByTeam(team);
+        return team;
+    }
+
+    // 모든 구성원의 소속 해제 및 대기 중인 초대 취소
+    // 팀원 지정 권한 삭제가 구성원 소속을 조회하므로 반드시 그 이후에 호출
+    public void removeTeamMembers(Team team) {
         teamMemberRepository.deleteAllByTeam(team);
         teamInvitationRepository.cancelAllPendingByTeam(team);
-        chatroomService.removeTeamChatroomMembers(team);
     }
 
     @Transactional(readOnly = true)

@@ -1,7 +1,6 @@
 package com.backend.orbitflow.domain.user.service;
 
 import com.backend.orbitflow.domain.auth.error.AuthErrorCode;
-import com.backend.orbitflow.domain.auth.service.AuthService;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.domain.user.enums.UserRole;
 import com.backend.orbitflow.domain.user.enums.UserStatus;
@@ -35,17 +34,34 @@ public class UserServiceImpl implements UserService{
 
     private static final int WITHDRAWAL_RETENTION_DAYS = 30;
     private static final int DORMANT_MONTHS = 12;
+    private static final String RELEASED_EMAIL_PREFIX = "released-";
 
     private final UserRepository userRepository;
-    private final AuthService authService;
     private final ApplicationEventPublisher eventPublisher;
     private final EntityManager entityManager;
 
+    // 로그인한 본인의 변경·조회 : 정지·휴면·탈퇴 계정은 대상이 아님 (휴면 계정은 로그인·이메일 인증 절차로만 활성화)
+    @Transactional(readOnly = true)
+    public User getActiveByUuid(String uuid) {
+        return userRepository.findByUuidAndDeletedAtIsNullAndStatus(uuid, UserStatus.ACTIVE).orElseThrow(
+                () -> new CommonException(UserErrorCode.USER_NOT_FOUND)
+        );
+    }
+
+    // 다른 사용자를 찾는 경우(프로필 열람, 팔로우·초대 대상 등) : 휴면 계정도 존재하는 사용자이므로 ACTIVE 로 제한하지 않음
     @Transactional(readOnly = true)
     public User getByUuid(String uuid) {
         return userRepository.findByUuidAndDeletedAtIsNullAndStatusNot(uuid, UserStatus.BANNED).orElseThrow(
                 () -> new CommonException(UserErrorCode.USER_NOT_FOUND)
         );
+    }
+
+    // 차단 관계(양방향)인 사용자는 존재하지 않는 것으로 처리 : 차단이 공개 범위·팔로우 상태보다 우선
+    public User getViewableUser(User target, boolean blocked) {
+        if (blocked) {
+            throw new CommonException(UserErrorCode.USER_NOT_FOUND);
+        }
+        return target;
     }
 
     // uuid 목록을 한 번에 조회 (요청 순서 유지, 중복 제거), 하나라도 없으면 USER_NOT_FOUND
@@ -103,11 +119,11 @@ public class UserServiceImpl implements UserService{
         return user;
     }
 
-    public User register(String email, String password, String name, String varifyToken) {
+    // 이메일 인증 토큰 검증은 호출 측(UserFacade)이 먼저 수행
+    public User register(String email, String password, String name) {
         if (userRepository.findByEmail(email).isPresent()) {
             throw new CommonException(UserErrorCode.EMAIL_DUPLICATE);
         }
-        authService.consumeVerifyToken(email, varifyToken);
         User user = User.of(
                 UUID.randomUUID().toString().replace("-", ""),
                 email,
@@ -116,6 +132,19 @@ public class UserServiceImpl implements UserService{
                 UserRole.ROLE_USER
         );
         return saveNewUser(user);
+    }
+
+    // 탈퇴한 계정(30일 유예 중)이 점유한 이메일을 풀어 재가입을 허용 : 이전 계정은 식별정보를 지워 복구할 수 없게 함
+    // 이메일은 purge 가 "이미 처리됨"으로 보는 withdrawn- 접두어를 쓰지 않아, 보관 기간이 지나면 purge 가 남은 데이터를 정리함
+    // 새 행의 INSERT(IDENTITY)가 먼저 실행되어 이메일 unique 에 걸리지 않도록 즉시 flush
+    // 소셜 연결 삭제는 호출 측(Facade)이 반환된 이전 계정으로 수행
+    public Optional<User> releaseWithdrawnEmail(String email) {
+        return userRepository.findByEmail(email)
+                .filter(found -> found.getDeletedAt() != null)
+                .map(withdrawn -> {
+                    withdrawn.anonymize(RELEASED_EMAIL_PREFIX + withdrawn.getUuid() + "@orbitflow.invalid");
+                    return userRepository.saveAndFlush(withdrawn);
+                });
     }
 
     public User registerSocialUser(String email, String name, String profileImage) {
@@ -132,32 +161,30 @@ public class UserServiceImpl implements UserService{
     }
 
     public User updateProfile(String uuid, String name, String introduce, boolean isPrivate) {
-        User user = getByUuid(uuid);
+        User user = getActiveByUuid(uuid);
         user.updateUserInfo(name, introduce, isPrivate);
         return userRepository.save(user);
     }
 
-    // 변경 전 이미지 URL 반환 (호출 측에서 커밋 후 정리)
-    public String updateProfileImage(String uuid, String profileImage) {
-        User user = getByUuid(uuid);
-        String oldImage = user.getProfileImage();
+    // 호출 측 트랜잭션에서 이미 조회한(영속 상태) 사용자를 받아 변경 : 더티 체킹으로 UPDATE 1회, 재조회 없음
+    // 변경 전 이미지 URL은 호출 측이 변경 전에 user 에서 읽어 커밋 후 정리
+    public User updateProfileImage(User user, String profileImage) {
         user.updateProfileImage(profileImage);
-        return oldImage;
+        return user;
     }
 
-    // 이메일 변경은 새 이메일의 OTP 인증 토큰이 필요 (가입과 동일)
-    public User updateEmail(String uuid, String email, String varifyToken) {
+    // 새 이메일의 OTP 인증 토큰 검증은 호출 측(UserFacade)이 먼저 수행 (가입과 동일)
+    public User updateEmail(String uuid, String email) {
         if (userRepository.findByEmail(email).isPresent()) {
             throw new CommonException(UserErrorCode.EMAIL_DUPLICATE);
         }
-        authService.consumeVerifyToken(email, varifyToken);
-        User user = getByUuid(uuid);
+        User user = getActiveByUuid(uuid);
         user.updateEmail(email);
         return userRepository.save(user);
     }
 
     public User updateChatInviteSetting(String uuid, boolean allowNonFollowChatInvite) {
-        User user = getByUuid(uuid);
+        User user = getActiveByUuid(uuid);
         user.updateAllowNonFollowChatInvite(allowNonFollowChatInvite);
         return user;
     }
@@ -176,7 +203,7 @@ public class UserServiceImpl implements UserService{
     // 소셜 가입자(비밀번호 없음)만 최초 설정 가능, 사용자 행 락으로 소셜 연결 해제와 직렬화
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public User setInitialPassword(String uuid, String encodedPassword) {
-        User user = lockUser(getByUuid(uuid).getId());
+        User user = lockUser(getActiveByUuid(uuid).getId());
         if (user.getPassword() != null) {
             throw new CommonException(UserErrorCode.PASSWORD_ALREADY_SET);
         }
@@ -185,14 +212,14 @@ public class UserServiceImpl implements UserService{
     }
 
     public User updatePassword(String uuid, String password) {
-        User user = getByUuid(uuid);
+        User user = getActiveByUuid(uuid);
         user.updatePassword(password);
         return userRepository.save(user);
     }
 
     // 탈퇴 신청 시점부터 30일간 논리적 삭제 상태로 보관 (본인 확인은 호출 측에서 수행)
     public void deleteUser(String uuid) {
-        User user = getByUuid(uuid);
+        User user = getActiveByUuid(uuid);
         user.delete();
         userRepository.save(user);
         eventPublisher.publishEvent(new UserWithdrawnEvent(uuid));

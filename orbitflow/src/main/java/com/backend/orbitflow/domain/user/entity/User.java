@@ -12,6 +12,7 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.ColumnDefault;
 
 import java.time.LocalDateTime;
 import lombok.AccessLevel;
@@ -59,11 +60,17 @@ public class User extends SoftDeleteEntity{
     @Column(nullable = false)
     private boolean allowNonFollowChatInvite;
 
+    // 이용약관·개인정보 처리방침 동의 일시 (가입 시점에 기록, 이후 변경하지 않음)
+    // 기존 행이 있는 DB에 컬럼이 추가될 때 NOT NULL 위반이 나지 않도록 DB 기본값을 둠 (기존 사용자는 컬럼 추가 시각)
+    @ColumnDefault("CURRENT_TIMESTAMP(6)")
+    @Column(nullable = false, updatable = false)
+    private LocalDateTime termsAgreedAt;
+
     public static User of(
         String uuid, String email, String password, String name, UserRole role
     ) {
         return new User(
-            null, uuid, email, password, name, null, null, role, UserStatus.ACTIVE, false, null, true
+            null, uuid, email, password, name, null, null, role, UserStatus.ACTIVE, false, null, true, LocalDateTime.now()
         );
     }
 
@@ -71,7 +78,7 @@ public class User extends SoftDeleteEntity{
             String uuid, String email, String name, String profileImage
     ) {
         return new User (
-                null, uuid, email, null, name, null, profileImage, UserRole.ROLE_USER, UserStatus.ACTIVE, false, null, true
+                null, uuid, email, null, name, null, profileImage, UserRole.ROLE_USER, UserStatus.ACTIVE, false, null, true, LocalDateTime.now()
         );
     }
 

@@ -1,6 +1,5 @@
 package com.backend.orbitflow.domain.follow.service;
 
-import com.backend.orbitflow.domain.block.service.BlockService;
 import com.backend.orbitflow.domain.follow.dto.response.FollowListResponse;
 import com.backend.orbitflow.domain.follow.entity.Follow;
 import com.backend.orbitflow.domain.follow.enums.FollowState;
@@ -28,7 +27,6 @@ import java.util.Map;
 public class FollowServiceImpl implements FollowService {
 
     private final FollowRepository followRepository;
-    private final BlockService blockService;
 
     // follows row가 없으면 NOT_FOLLOW
     // userIds 중 user를 팔로우 중인 사용자 id (한 번에 조회)
@@ -60,8 +58,7 @@ public class FollowServiceImpl implements FollowService {
     }
 
     // 관계가 있으면 삭제(언팔로우·요청 철회) 후 null 반환, 없으면 생성
-    // 파사드의 차단 확인과 저장 사이에 차단이 생길 수 있으므로 저장 후 같은 트랜잭션에서 다시 확인 (차단이면 롤백)
-    // 다른 트랜잭션이 커밋한 차단이 보이도록 READ_COMMITTED 필수
+    // 저장 후 차단 재확인(차단이면 롤백)은 같은 트랜잭션에서 FollowFacade가 수행하므로 호출 측 트랜잭션도 READ_COMMITTED 필수
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public Follow toggleFollow(User follower, User followee) {
         Optional<Follow> follow = followRepository.findByFollowerAndFollowee(follower, followee);
@@ -69,11 +66,7 @@ public class FollowServiceImpl implements FollowService {
             followRepository.delete(follow.get());
             return null;
         }
-        Follow saved = followRepository.save(Follow.of(followee, follower));
-        if (blockService.isBlocked(follower, followee)) {
-            throw new CommonException(FollowErrorCode.BLOCKED_USER);
-        }
-        return saved;
+        return followRepository.save(Follow.of(followee, follower));
     }
 
     public Follow acceptFollow(User me, Long followId) {

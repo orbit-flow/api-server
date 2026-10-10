@@ -18,6 +18,6 @@ public class TimelineFacade {
 
     @Transactional(readOnly = true)
     public PageResponse<TimelineResponse> getTimeline(AuthUser authUser, int page, int size) {
-        return PageResponse.from(timelineService.getTimeline(userService.getByUuid(authUser.getUuid()), page, size));
+        return PageResponse.from(timelineService.getTimeline(userService.getActiveByUuid(authUser.getUuid()), page, size));
     }
 }

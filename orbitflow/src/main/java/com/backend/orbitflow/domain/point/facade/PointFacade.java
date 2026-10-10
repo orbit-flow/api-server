@@ -28,7 +28,7 @@ public class PointFacade {
     // 포인트 변경 : READ COMMITTED 필수 (PointLedger 참고), 적립 결과는 처리 완료 즉시 앱 내 알림으로 고지
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public AttendanceResponse attend(AuthUser authUser) {
-        User me = userService.getByUuid(authUser.getUuid());
+        User me = userService.getActiveByUuid(authUser.getUuid());
         AttendanceResponse response = pointService.attend(me);
         eventPublisher.publishEvent(NotificationRequest.to(me, NotificationType.POINT_EARNED, null, null, null,
                 "출석 포인트 " + response.transaction().amount() + "P가 적립되었습니다. (잔액 " + response.transaction().balanceAfter() + "P)"));
@@ -37,12 +37,12 @@ public class PointFacade {
 
     @Transactional(readOnly = true)
     public AttendanceStatusResponse getAttendanceStatus(AuthUser authUser) {
-        return pointService.getAttendanceStatus(userService.getByUuid(authUser.getUuid()));
+        return pointService.getAttendanceStatus(userService.getActiveByUuid(authUser.getUuid()));
     }
 
     @Transactional(readOnly = true)
     public PageResponse<PointTransactionResponse> getHistory(AuthUser authUser, int page, int size) {
-        return PageResponse.from(pointService.getHistory(userService.getByUuid(authUser.getUuid()), page, size));
+        return PageResponse.from(pointService.getHistory(userService.getActiveByUuid(authUser.getUuid()), page, size));
     }
 
     @Transactional(readOnly = true)

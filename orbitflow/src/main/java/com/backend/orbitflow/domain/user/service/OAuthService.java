@@ -12,5 +12,6 @@ public interface OAuthService {
     Optional<User> findUser(Provider provider, String providerId);
     void link(User user, Provider provider, String providerId);
     Page<OAuthAccount> getLinkedAccounts(User user, int page, int size);
-    void unlink(User user, Provider provider);
+    void unlink(User lockedUser, Provider provider);
+    void unlinkAll(User user);
 }

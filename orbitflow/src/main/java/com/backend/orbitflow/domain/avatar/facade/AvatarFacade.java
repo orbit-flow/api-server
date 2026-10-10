@@ -4,6 +4,7 @@ import com.backend.orbitflow.domain.avatar.dto.response.AvatarResponse;
 import com.backend.orbitflow.domain.avatar.dto.response.PurchaseResponse;
 import com.backend.orbitflow.domain.avatar.dto.response.UserItemResponse;
 import com.backend.orbitflow.domain.avatar.service.AvatarService;
+import com.backend.orbitflow.domain.item.service.ItemService;
 import com.backend.orbitflow.domain.notification.enums.NotificationType;
 import com.backend.orbitflow.domain.notification.event.NotificationRequest;
 import com.backend.orbitflow.domain.user.entity.User;
@@ -23,6 +24,7 @@ public class AvatarFacade {
 
     private final AvatarService avatarService;
     private final UserService userService;
+    private final ItemService itemService;
     private final ApplicationEventPublisher eventPublisher;
 
     @Transactional(readOnly = true)
@@ -44,7 +46,7 @@ public class AvatarFacade {
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public PurchaseResponse purchase(AuthUser authUser, Long itemId) {
         User me = me(authUser);
-        PurchaseResponse response = avatarService.purchase(me, itemId);
+        PurchaseResponse response = avatarService.purchase(me, itemService.getItem(itemId));
         eventPublisher.publishEvent(NotificationRequest.to(me, NotificationType.ITEM_PURCHASED, null, response.itemId(), null,
                 "'" + response.name() + "'을(를) " + response.price() + "P에 구매했습니다. (잔액 " + response.balanceAfter() + "P)"));
         return response;
@@ -62,6 +64,6 @@ public class AvatarFacade {
     }
 
     private User me(AuthUser authUser) {
-        return userService.getByUuid(authUser.getUuid());
+        return userService.getActiveByUuid(authUser.getUuid());
     }
 }

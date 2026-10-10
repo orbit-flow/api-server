@@ -15,6 +15,8 @@ import java.util.List;
 
 public interface UserRepository extends JpaRepository<User, Long>{
 
+    // 로그인한 본인 조회용(ACTIVE 전용)과 다른 사용자 조회용(휴면 포함, 정지 제외)을 구분
+    Optional<User> findByUuidAndDeletedAtIsNullAndStatus(String uuid, UserStatus status);
     Optional<User> findByUuidAndDeletedAtIsNullAndStatusNot(String uuid, UserStatus status);
     Optional<User> findByUuidAndDeletedAtIsNull(String uuid);
     Optional<User> findByEmail(String email);

@@ -1,6 +1,5 @@
 package com.backend.orbitflow.domain.chat.service;
 
-import com.backend.orbitflow.domain.block.service.BlockService;
 import com.backend.orbitflow.domain.chat.dto.ChatroomCount;
 import com.backend.orbitflow.domain.chat.dto.ChatroomPageRow;
 import com.backend.orbitflow.domain.chat.dto.response.ChatroomMemberResponse;
@@ -14,10 +13,8 @@ import com.backend.orbitflow.domain.chat.repository.ChatroomMemberRepository;
 import com.backend.orbitflow.domain.chat.repository.ChatroomRepository;
 import com.backend.orbitflow.domain.chat.repository.MessageRepository;
 import com.backend.orbitflow.domain.chat.websocket.ChatSubscriptionRevokeEvent;
-import com.backend.orbitflow.domain.follow.service.FollowService;
 import com.backend.orbitflow.domain.team.entity.Team;
 import com.backend.orbitflow.domain.team.error.TeamErrorCode;
-import com.backend.orbitflow.domain.team.service.TeamAuthorityService;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.global.common.error.exception.CommonException;
 import lombok.RequiredArgsConstructor;
@@ -48,15 +45,14 @@ public class ChatroomServiceImpl implements ChatroomService {
     private final ChatroomMemberRepository chatroomMemberRepository;
     private final JdbcBulkInserter jdbcBulkInserter;
     private final MessageRepository messageRepository;
-    private final BlockService blockService;
-    private final FollowService followService;
-    private final TeamAuthorityService teamAuthorityService;
     private final ApplicationEventPublisher eventPublisher;
 
     // 두 사용자 사이의 1:1 대화는 하나만 존재 (direct_key unique), 나갔던 대화면 다시 참여 (참여 이후 메시지만 열람)
     // TODO: 같은 두 사용자의 최초 생성 요청이 동시에 들어오면 한쪽은 unique 위반으로 실패 (재요청 시 기존 대화 반환)
-    public ChatroomResponse openDirect(User me, User target) {
-        validateInvitable(me, List.of(target));
+    // 차단·팔로우·팀 소속 조회는 다른 도메인이므로 ChatFacade가 같은 트랜잭션에서 미리 조회해 넘기고, 검증 순서·판정은 여기서 유지
+    //  blockedIds : 초대자와 차단 관계인 id / followerIds : 초대자를 팔로우 중인 id (대상 id를 포함한 묶음 조회 결과)
+    public ChatroomResponse openDirect(User me, User target, Set<Long> blockedIds, Set<Long> followerIds) {
+        validateInvitable(me, List.of(target), blockedIds, followerIds);
         Chatroom chatroom = chatroomRepository.findByDirectKey(Chatroom.directKey(me.getId(), target.getId()))
                 .orElseGet(() -> {
                     Chatroom created = chatroomRepository.save(Chatroom.direct(newUuid(), me.getId(), target.getId()));
@@ -68,25 +64,33 @@ public class ChatroomServiceImpl implements ChatroomService {
     }
 
     // 다수 참여 대화 : 나를 포함해 3명 이상
-    public ChatroomResponse createGroup(User me, String title, List<User> users) {
+    // blockAmong : 나를 포함한 참여자 사이 차단 관계 존재 여부 (조회 대상은 findOtherUsers + 나, getGroupBlockIds)
+    public ChatroomResponse createGroup(User me, String title, List<User> users,
+                                        Set<Long> blockedIds, Set<Long> followerIds, boolean blockAmong) {
         List<User> participants = distinctOthers(me, users);
-        validateInvitable(me, participants);
-        validateNoBlockAmong(withMe(me, participants), withMe(me, participants));
+        validateInvitable(me, participants, blockedIds, followerIds);
+        validateNoBlockAmong(blockAmong);
         return createGroupChatroom(me, null, title, participants);
     }
 
     // 팀 채팅방 : 팀 구성원만 참여 (팀 내부 대화이므로 팔로우 기반 초대 제한은 적용하지 않음)
-    public ChatroomResponse createTeamGroup(User me, Team team, String title, List<User> users) {
-        teamAuthorityService.getMember(team, me);
+    // 생성자의 팀 구성원 여부는 호출 전에 ChatFacade가 확인
+    // teamMemberIds : findOtherUsers 중 팀 구성원인 id
+    public ChatroomResponse createTeamGroup(User me, Team team, String title, List<User> users,
+                                            Set<Long> teamMemberIds, boolean blockAmong) {
         List<User> participants = distinctOthers(me, users);
-        validateTeamMembers(team, participants);
-        validateNoBlockAmong(withMe(me, participants), withMe(me, participants));
+        validateTeamMembers(participants, teamMemberIds);
+        validateNoBlockAmong(blockAmong);
         return createGroupChatroom(me, team, title, participants);
     }
 
     // 1:1 대화에서 초대하면 기존 대화는 유지하고 기존 참여자와 초대 대상이 참여하는 새 다수 참여 대화 생성
     // 초대 대상 검증(차단·팔로우·팀 소속·기존 참여)은 대상 수와 무관하게 묶음 조회
-    public ChatroomResponse invite(User me, String chatroomUuid, List<User> users) {
+    // 조회 결과는 모든 초대 대상(findDistinctUsers) 기준 묶음 조회이고, 실제 검증 대상(기존 참여자 제외 등)은 여기서 걸러 판정
+    // blockAmong : getInviteBlockTargetIds ↔ getInviteBlockAllIds 사이 차단 관계 존재 여부, teamMemberIds : 팀 채팅방일 때 초대 대상 중 팀 구성원인 id
+    public ChatroomResponse invite(User me, String chatroomUuid, List<User> users,
+                                   Set<Long> blockedIds, Set<Long> followerIds,
+                                   Set<Long> teamMemberIds, boolean blockAmong) {
         Chatroom chatroom = getChatroom(chatroomUuid);
         getMember(chatroom, me);
         List<User> invitees = distinctUsers(users);
@@ -96,10 +100,10 @@ public class ChatroomServiceImpl implements ChatroomService {
             List<User> newcomers = invitees.stream()
                     .filter(invitee -> participants.stream().noneMatch(user -> user.getId().equals(invitee.getId())))
                     .toList();
-            validateInvitable(me, newcomers);
+            validateInvitable(me, newcomers, blockedIds, followerIds);
             participants.addAll(newcomers);
             // 새 대화의 최종 참여자(기존 상대 포함) 사이에 차단 관계가 하나라도 있으면 불가
-            validateNoBlockAmong(ids(participants), ids(participants));
+            validateNoBlockAmong(blockAmong);
             participants.removeIf(user -> user.getId().equals(me.getId()));
             return createGroupChatroom(me, null, null, participants);
         }
@@ -108,14 +112,12 @@ public class ChatroomServiceImpl implements ChatroomService {
             throw new CommonException(ChatErrorCode.ALREADY_CHAT_MEMBER);
         }
         if (chatroom.isTeamChatroom()) {
-            validateTeamMembers(chatroom.getTeam(), invitees);
+            validateTeamMembers(invitees, teamMemberIds);
         } else {
-            validateInvitable(me, invitees);
+            validateInvitable(me, invitees, blockedIds, followerIds);
         }
         // 초대 대상과 기존 참여자·초대 대상끼리 차단 관계가 있으면 불가 (기존 참여자끼리의 관계는 검증하지 않음)
-        List<Long> allIds = new ArrayList<>(chatroomMemberRepository.findMemberUserIds(chatroom));
-        allIds.addAll(ids(invitees));
-        validateNoBlockAmong(ids(invitees), allIds);
+        validateNoBlockAmong(blockAmong);
         insertMembers(chatroom, ids(invitees));
         return toResponse(chatroom, me);
     }
@@ -131,9 +133,10 @@ public class ChatroomServiceImpl implements ChatroomService {
     }
 
     // 마지막 메시지 최신순 페이지 : 페이지에 든 채팅방에 대해서만 부가 정보를 묶음 조회 (페이지 크기와 무관하게 쿼리 8회)
-    // 목록 + 개수 → 채팅방 → 마지막 메시지 → 안 읽은 수 → 참여자 수 → 1:1 상대 → 내 차단 목록
+    // 목록 + 개수 → 채팅방 → 마지막 메시지 → 안 읽은 수 → 참여자 수 → 1:1 상대 (+ 내 차단 목록은 호출 측 조회)
     @Transactional(readOnly = true)
-    public Page<ChatroomResponse> getMyChatrooms(User me, int page, int size) {
+    // blockeeIds : 내가 차단한 사용자 id (차단 도메인 조회는 ChatFacade가 같은 트랜잭션에서 수행)
+    public Page<ChatroomResponse> getMyChatrooms(User me, int page, int size, Set<Long> blockeeIds) {
         Pageable pageable = toPageable(page, size);
         Page<ChatroomPageRow> rows = chatroomMemberRepository.findMyChatroomPage(me.getId(), pageable);
         if (rows.isEmpty()) {
@@ -150,7 +153,6 @@ public class ChatroomServiceImpl implements ChatroomService {
         Map<Long, Long> unread = toCountMap(chatroomMemberRepository.countUnreadIn(me, chatroomIds));
         Map<Long, Long> memberCounts = toCountMap(chatroomMemberRepository.countMembersIn(chatroomIds));
         Map<Long, User> counterparts = counterparts(chatroomIds, me);
-        Set<Long> blockeeIds = blockService.findBlockeeIds(me);
 
         return rows.map(row -> {
             Chatroom chatroom = chatrooms.get(row.getChatroomId());
@@ -226,14 +228,14 @@ public class ChatroomServiceImpl implements ChatroomService {
 
     // 차단 관계 불가, 상대가 팔로우하지 않는 사용자의 초대를 막아 두었으면 상대가 나를 팔로우 중이어야 함
     // 대상 수와 무관하게 쿼리 최대 2회 (차단 관계, 팔로우 관계)
-    private void validateInvitable(User inviter, List<User> invitees) {
+    private void validateInvitable(User inviter, List<User> invitees, Set<Long> blockedIds, Set<Long> followerIds) {
         if (invitees.isEmpty()) {
             return;
         }
         if (invitees.stream().anyMatch(invitee -> invitee.getId().equals(inviter.getId()))) {
             throw new CommonException(ChatErrorCode.SELF_CHAT);
         }
-        if (!blockService.findBlockedUserIdsAmong(inviter, ids(invitees)).isEmpty()) {
+        if (invitees.stream().anyMatch(invitee -> blockedIds.contains(invitee.getId()))) {
             throw new CommonException(ChatErrorCode.CHAT_BLOCKED);
         }
         List<Long> followRequired = invitees.stream()
@@ -241,28 +243,63 @@ public class ChatroomServiceImpl implements ChatroomService {
                 .map(User::getId)
                 .toList();
         if (!followRequired.isEmpty()
-                && !followService.findFollowerIdsAmong(inviter, followRequired).containsAll(followRequired)) {
+                && !followerIds.containsAll(followRequired)) {
             throw new CommonException(ChatErrorCode.CHAT_INVITE_NOT_ALLOWED);
         }
     }
 
     // targetIds가 allIds(targetIds 포함) 중 누구와도 차단 관계(어느 방향이든)가 아니어야 함 (쿼리 1회)
-    private void validateNoBlockAmong(List<Long> targetIds, List<Long> allIds) {
-        if (!targetIds.isEmpty() && blockService.existsBlockAmong(targetIds, allIds)) {
+    private void validateNoBlockAmong(boolean blockAmong) {
+        if (blockAmong) {
             throw new CommonException(ChatErrorCode.CHAT_BLOCKED);
         }
     }
 
-    private List<Long> withMe(User me, List<User> others) {
-        List<Long> userIds = new ArrayList<>(ids(others));
+    private void validateTeamMembers(List<User> users, Set<Long> teamMemberIds) {
+        if (!users.isEmpty() && users.stream().filter(user -> teamMemberIds.contains(user.getId())).count() != users.size()) {
+            throw new CommonException(TeamErrorCode.MEMBER_NOT_FOUND);
+        }
+    }
+
+    // 아래 메서드는 ChatFacade가 다른 도메인(차단·팀) 조회 대상을 정할 때 사용 : 검증과 같은 기준의 사용자·id 목록
+    public List<User> findOtherUsers(User me, List<User> users) {
+        return distinctOthers(me, users);
+    }
+
+    public List<User> findDistinctUsers(List<User> users) {
+        return distinctUsers(users);
+    }
+
+    // 다수 참여 대화 생성 시 서로 차단 관계가 없어야 하는 id (나 + 상대 전원)
+    public List<Long> getGroupBlockIds(User me, List<User> participants) {
+        List<Long> userIds = new ArrayList<>(ids(participants));
         userIds.add(me.getId());
         return userIds;
     }
 
-    private void validateTeamMembers(Team team, List<User> users) {
-        if (!users.isEmpty() && teamAuthorityService.findMemberUserIds(team, users).size() != users.size()) {
-            throw new CommonException(TeamErrorCode.MEMBER_NOT_FOUND);
+    // 초대 시 차단 관계 확인 대상 id (1:1이면 최종 참여자 전원끼리, 그 외에는 초대 대상 ↔ 기존 참여자·초대 대상)
+    @Transactional(readOnly = true)
+    public List<Long> getInviteBlockTargetIds(Chatroom chatroom, List<User> invitees) {
+        return chatroom.isDirect() ? directParticipantIds(chatroom, invitees) : ids(invitees);
+    }
+
+    @Transactional(readOnly = true)
+    public List<Long> getInviteBlockAllIds(Chatroom chatroom, List<User> invitees) {
+        if (chatroom.isDirect()) {
+            return directParticipantIds(chatroom, invitees);
         }
+        List<Long> allIds = new ArrayList<>(chatroomMemberRepository.findMemberUserIds(chatroom));
+        allIds.addAll(ids(invitees));
+        return allIds;
+    }
+
+    // 1:1 대화의 기존 참여자 + 새로 초대되는 사용자
+    private List<Long> directParticipantIds(Chatroom chatroom, List<User> invitees) {
+        List<User> participants = new ArrayList<>(memberUsers(chatroom));
+        invitees.stream()
+                .filter(invitee -> participants.stream().noneMatch(user -> user.getId().equals(invitee.getId())))
+                .forEach(participants::add);
+        return ids(participants);
     }
 
     private List<User> distinctOthers(User me, List<User> users) {

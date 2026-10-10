@@ -4,6 +4,7 @@ import com.backend.orbitflow.domain.user.dto.request.*;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import com.backend.orbitflow.domain.user.dto.response.UserProfileResponse;
 import com.backend.orbitflow.domain.user.dto.response.UserResponse;
 import com.backend.orbitflow.domain.user.dto.response.UserSuccessCode;
 import com.backend.orbitflow.domain.user.facade.UserFacade;
@@ -65,7 +66,21 @@ public class UserController {
             ));
     }
 
-    @PutMapping("me/profile")
+    // 다른 사용자 프로필 열람 (UUID·이름·소개·프로필 사진·팔로우 상태), /me 는 고정 경로가 우선 매칭됨
+    @GetMapping("/{userUuid}")
+    public ResponseEntity<CommonResponse<UserProfileResponse>> getUserProfile(
+        @AuthenticationPrincipal AuthUser authUser,
+        @PathVariable String userUuid
+    ) {
+        return ResponseEntity
+            .status(HttpStatus.OK)
+            .body(CommonResponse.success(
+                UserSuccessCode.GET_USER_PROFILE,
+                userFacade.getUserProfile(authUser, userUuid)
+            ));
+    }
+
+    @PutMapping("/me/profile")
     public ResponseEntity<CommonResponse<UserResponse>> updateProfile(
         @AuthenticationPrincipal AuthUser authUser,
         @Valid @RequestBody UserProfileUpdateRequest request

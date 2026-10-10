@@ -17,6 +17,7 @@ import com.backend.orbitflow.global.security.AuthUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Component
@@ -30,7 +31,7 @@ public class FollowFacade {
 
     @Transactional(readOnly = true)
     public PageResponse<FollowListResponse> getFollowing(AuthUser authUser, String uuid, int page, int size, String keyword) {
-        User me = userService.getByUuid(authUser.getUuid());
+        User me = userService.getActiveByUuid(authUser.getUuid());
         User target = userService.getByUuid(uuid);
         validateFollowListAccess(me, target);
         return PageResponse.from(followService.getFollowings(me, target, page, size, keyword));
@@ -38,7 +39,7 @@ public class FollowFacade {
 
     @Transactional(readOnly = true)
     public PageResponse<FollowListResponse> getFollower(AuthUser authUser, String uuid, int page, int size, String keyword) {
-        User me = userService.getByUuid(authUser.getUuid());
+        User me = userService.getActiveByUuid(authUser.getUuid());
         User target = userService.getByUuid(uuid);
         validateFollowListAccess(me, target);
         return PageResponse.from(followService.getFollowers(me, target, page, size, keyword));
@@ -46,16 +47,19 @@ public class FollowFacade {
 
     @Transactional(readOnly = true)
     public PageResponse<FollowListResponse> getFollowRequests(AuthUser authUser, int page, int size, String keyword) {
-        User me = userService.getByUuid(authUser.getUuid());
+        User me = userService.getActiveByUuid(authUser.getUuid());
         return PageResponse.from(followService.getFollowRequests(me, page, size, keyword));
     }
 
     // 관계가 없으면 팔로우(비밀계정이면 요청), 있으면 언팔로우·요청 철회
+    // 차단 확인과 저장 사이에 차단이 생길 수 있으므로 저장 후 같은 트랜잭션에서 다시 확인 (차단이면 롤백)
+    // 다른 트랜잭션이 커밋한 차단이 보이도록 READ_COMMITTED 필수
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public FollowResponse toggleFollow(AuthUser authUser, String uuid) {
         if (authUser.getUuid().equals(uuid)) {
             throw new CommonException(FollowErrorCode.SELF_FOLLOW);
         }
-        User me = userService.getByUuid(authUser.getUuid());
+        User me = userService.getActiveByUuid(authUser.getUuid());
         User target = userService.getByUuid(uuid);
         if (blockService.isBlocked(me, target)) {
             throw new CommonException(FollowErrorCode.BLOCKED_USER);
@@ -63,6 +67,9 @@ public class FollowFacade {
         Follow follow = followService.toggleFollow(me, target);
         if (follow == null) {
             return FollowResponse.notFollow(target.getUuid());
+        }
+        if (blockService.isBlocked(me, target)) {
+            throw new CommonException(FollowErrorCode.BLOCKED_USER);
         }
         // 팔로우·팔로우 요청 활동은 대상 사용자에게
         String content = follow.isPending()
@@ -73,7 +80,7 @@ public class FollowFacade {
     }
 
     public FollowResponse acceptFollow(AuthUser authUser, Long followId) {
-        User me = userService.getByUuid(authUser.getUuid());
+        User me = userService.getActiveByUuid(authUser.getUuid());
         Follow follow = followService.acceptFollow(me, followId);
         // 비밀계정 팔로우 요청이 승인되면 요청자에게 (거절은 고지하지 않음)
         // 상대가 먼저 나를 팔로우해 같은 (SOCIAL, 행위자) 알림이 이미 있어도 수락 알림은 발송
@@ -84,13 +91,13 @@ public class FollowFacade {
 
     // 받은 팔로우 요청 거절 또는 팔로워 삭제 : 상대방 입장에서 NOT_FOLLOW
     public FollowResponse deniedFollow(AuthUser authUser, Long followId) {
-        User me = userService.getByUuid(authUser.getUuid());
+        User me = userService.getActiveByUuid(authUser.getUuid());
         Follow follow = followService.deniedFollow(me, followId);
         return FollowResponse.notFollow(follow.getFollower().getUuid());
     }
 
     public FollowResponse toggleNotification(AuthUser authUser, String uuid) {
-        User me = userService.getByUuid(authUser.getUuid());
+        User me = userService.getActiveByUuid(authUser.getUuid());
         User target = userService.getByUuid(uuid);
         Follow follow = followService.toggleNotification(me, target);
         return FollowResponse.of(follow.getId(), target.getUuid(), follow.getState());

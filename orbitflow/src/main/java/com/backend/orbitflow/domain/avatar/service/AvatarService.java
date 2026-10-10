@@ -16,7 +16,7 @@ public interface AvatarService {
     AvatarResponse getUserAvatar(User target);
     Page<UserItemResponse> getMyItems(User me, int page, int size);
     Set<Long> findOwnedItemIds(User me, Collection<Item> items);
-    PurchaseResponse purchase(User me, Long itemId);
+    PurchaseResponse purchase(User me, Item item);
     UserItemResponse equip(User me, Long itemId);
     UserItemResponse unequip(User me, Long itemId);
     void unequipAllByItem(Item item);

@@ -1,6 +1,5 @@
 package com.backend.orbitflow.domain.comment.service;
 
-import com.backend.orbitflow.domain.block.service.BlockService;
 import com.backend.orbitflow.domain.comment.dto.response.CommentResponse;
 import com.backend.orbitflow.domain.comment.entity.Comment;
 import com.backend.orbitflow.domain.comment.error.CommentErrorCode;
@@ -29,18 +28,21 @@ import org.springframework.data.domain.Pageable;
 public class CommentServiceImpl implements CommentService {
 
     private final CommentRepository commentRepository;
-    private final BlockService blockService;
 
-    public CommentResponse createComment(User actor, Post post, Long parentCommentId, String content) {
-        Comment parent = null;
-        if (parentCommentId != null) {
-            parent = getActiveComment(parentCommentId);
-            if (parent.isReply() || !parent.getPost().getId().equals(post.getId())) {
-                throw new CommonException(CommentErrorCode.INVALID_PARENT_COMMENT);
-            }
-            if (!parent.isAuthor(actor) && blockService.isBlocked(parent.getUser(), actor)) {
-                throw new CommonException(CommentErrorCode.COMMENT_BLOCKED);
-            }
+    // 대댓글의 부모 댓글 (삭제됨·대댓글·다른 게시글의 댓글이면 불가), 부모 작성자와의 차단 확인은 호출 측(CommentFacade)
+    @Transactional(readOnly = true)
+    public Comment getParentComment(Post post, Long parentCommentId) {
+        Comment parent = getActiveComment(parentCommentId);
+        if (parent.isReply() || !parent.getPost().getId().equals(post.getId())) {
+            throw new CommonException(CommentErrorCode.INVALID_PARENT_COMMENT);
+        }
+        return parent;
+    }
+
+    // parent : 대댓글이면 getParentComment의 결과 (최상위 댓글이면 null), parentAuthorBlocked : 부모 작성자와 actor의 차단 관계
+    public CommentResponse createComment(User actor, Post post, Comment parent, boolean parentAuthorBlocked, String content) {
+        if (parent != null && !parent.isAuthor(actor) && parentAuthorBlocked) {
+            throw new CommonException(CommentErrorCode.COMMENT_BLOCKED);
         }
         return CommentResponse.from(commentRepository.save(Comment.of(post, actor, parent, content)));
     }
@@ -69,8 +71,9 @@ public class CommentServiceImpl implements CommentService {
 
     // 최상위 댓글의 대댓글 페이지 (게시글 열람 확인은 호출 측, 부모 댓글 작성자와 차단 관계면 목록에서 숨겨진 댓글이므로 없는 것으로 처리)
     @Transactional(readOnly = true)
-    public Page<CommentResponse> getReplies(User viewer, Comment parent, int page, int size) {
-        if (!parent.isAuthor(viewer) && blockService.isBlocked(parent.getUser(), viewer)) {
+    // parentAuthorBlocked : 부모 댓글 작성자와 viewer의 차단 관계 (조회는 호출 측)
+    public Page<CommentResponse> getReplies(User viewer, Comment parent, boolean parentAuthorBlocked, int page, int size) {
+        if (!parent.isAuthor(viewer) && parentAuthorBlocked) {
             throw new CommonException(CommentErrorCode.COMMENT_NOT_FOUND);
         }
         return commentRepository.findRepliesByParent(parent, viewer, toPageable(page, size)).map(CommentResponse::from);

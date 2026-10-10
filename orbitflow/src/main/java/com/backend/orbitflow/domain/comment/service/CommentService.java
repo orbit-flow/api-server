@@ -10,13 +10,14 @@ import java.util.Collection;
 import java.util.Map;
 import java.util.Optional;
 
-// 게시글 열람 권한은 호출 측(CommentFacade)에서 PostService로 확인한 뒤 전달
+// 게시글 열람 권한은 호출 측(CommentFacade)에서 PostService로 확인한 뒤 전달, 부모 댓글 작성자와의 차단 관계도 호출 측에서 조회해 전달
 public interface CommentService {
 
-    CommentResponse createComment(User actor, Post post, Long parentCommentId, String content);
+    Comment getParentComment(Post post, Long parentCommentId);
+    CommentResponse createComment(User actor, Post post, Comment parent, boolean parentAuthorBlocked, String content);
     Page<CommentResponse> getComments(User viewer, Post post, int page, int size);
     Comment getTopLevelComment(Long commentId);
-    Page<CommentResponse> getReplies(User viewer, Comment parent, int page, int size);
+    Page<CommentResponse> getReplies(User viewer, Comment parent, boolean parentAuthorBlocked, int page, int size);
     CommentResponse updateComment(User actor, Long commentId, String content);
     void deleteComment(User actor, Long commentId);
     Optional<Comment> findById(Long commentId);

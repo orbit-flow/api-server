@@ -30,7 +30,7 @@ public class ItemFacade {
     // 판매 중인 아이템과 요청자의 보유 여부 (보유 여부는 페이지의 아이템만 한 번에 조회)
     @Transactional(readOnly = true)
     public PageResponse<ItemResponse> getShopItems(AuthUser authUser, ItemType type, int page, int size) {
-        User me = userService.getByUuid(authUser.getUuid());
+        User me = userService.getActiveByUuid(authUser.getUuid());
         Page<Item> items = itemService.getShopItems(type, page, size);
         Set<Long> ownedIds = avatarService.findOwnedItemIds(me, items.getContent());
         return PageResponse.from(items.map(item -> ItemResponse.of(item, ownedIds.contains(item.getId()))));

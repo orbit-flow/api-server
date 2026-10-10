@@ -1,12 +1,9 @@
 package com.backend.orbitflow.domain.todo.service;
 
 import com.backend.orbitflow.domain.category.entity.Category;
-import com.backend.orbitflow.domain.category.service.CategoryService;
 import com.backend.orbitflow.domain.todo.dto.request.RoutineRequest;
-import com.backend.orbitflow.domain.todo.dto.response.RoutineResponse;
 import com.backend.orbitflow.domain.todo.dto.response.TodoResponse;
 import com.backend.orbitflow.domain.todo.entity.Todo;
-import com.backend.orbitflow.domain.todo.enums.RoutineScope;
 import com.backend.orbitflow.domain.todo.enums.TodoType;
 import com.backend.orbitflow.domain.todo.error.TodoErrorCode;
 import com.backend.orbitflow.domain.todo.repository.TodoRepository;
@@ -19,8 +16,6 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -32,69 +27,65 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.PageRequest;
 
+// 카테고리 상태·권한 확인과 반복 설정은 호출 측(Facade)에서 수행 (서비스끼리 직접 호출하지 않음)
 @Service
 @RequiredArgsConstructor
 @Transactional
 public class TodoServiceImpl implements TodoService {
 
     private final TodoRepository todoRepository;
-    private final CategoryService categoryService;
-    private final TodoAuthorityService todoAuthorityService;
-    private final RoutineService routineService;
     private final TodoReminderQueue todoReminderQueue;
 
-    // 개인 투두의 담당자는 카테고리 소유자, 팀 투두는 지정한 구성원(미지정 시 생성자)
-    public TodoResponse createTodo(
-            User actor, Long categoryId, Long parentTodoId, User assignee, TodoType type, String name,
-            LocalDateTime startDate, LocalDateTime endDate, Integer remindBeforeMinutes, RoutineRequest routine
-    ) {
-        Category category = categoryService.getActiveCategory(categoryId);
-        todoAuthorityService.checkEdit(category, actor);
-        validatePeriod(startDate, endDate);
+    // 소유자가 탈퇴했거나 팀이 삭제된 카테고리의 투두도 존재하지 않는 것으로 처리 (카테고리 확인은 호출 측)
+    @Transactional(readOnly = true)
+    public Todo getActiveTodo(Long todoId) {
+        return todoRepository.findWithAllById(todoId)
+                .filter(t -> !t.isDeleted())
+                .orElseThrow(() -> new CommonException(TodoErrorCode.TODO_NOT_FOUND));
+    }
 
-        Todo parent = null;
-        int sortOrder = 0;
-        if (parentTodoId != null) {
-            parent = getActiveTodo(parentTodoId);
-            if (parent.isChild() || !parent.getCategory().getId().equals(category.getId())) {
-                throw new CommonException(TodoErrorCode.INVALID_PARENT_TODO);
-            }
-            if (routine != null) {
-                throw new CommonException(TodoErrorCode.CHILD_TODO_ROUTINE);
-            }
-            sortOrder = todoRepository.findMaxSortOrderByParent(parent) + 1;
+    public void validatePeriod(LocalDateTime startDate, LocalDateTime endDate) {
+        if (endDate.isBefore(startDate)) {
+            throw new CommonException(TodoErrorCode.INVALID_TODO_PERIOD);
         }
+    }
 
-        User todoAssignee = category.getUser();
-        if (category.isTeamCategory()) {
-            todoAssignee = assignee == null ? actor : assignee;
-            if (!todoAssignee.getId().equals(actor.getId())) {
-                todoAuthorityService.checkAssign(category, actor, todoAssignee);
-            }
+    public void validateParent(Todo parent, Category category, RoutineRequest routine) {
+        if (parent.isChild() || !parent.getCategory().getId().equals(category.getId())) {
+            throw new CommonException(TodoErrorCode.INVALID_PARENT_TODO);
         }
-
-        Todo todo = todoRepository.save(Todo.of(
-                category, parent, todoAssignee, type, name, startDate, endDate, remindBeforeMinutes, sortOrder
-        ));
         if (routine != null) {
-            routineService.upsertRoutine(todo, routine.durationType(), routine.duration(), routine.daysOfWeek(), routine.repeatEndDate(), routine.scope());
+            throw new CommonException(TodoErrorCode.CHILD_TODO_ROUTINE);
         }
+    }
+
+    // 개인 투두의 담당자는 카테고리 소유자, 팀 투두는 지정한 구성원(미지정 시 생성자)
+    public User resolveAssignee(Category category, User actor, User assignee) {
+        if (!category.isTeamCategory()) {
+            return category.getUser();
+        }
+        return assignee == null ? actor : assignee;
+    }
+
+    public Todo createTodo(
+            Category category, Todo parent, User assignee, TodoType type, String name,
+            LocalDateTime startDate, LocalDateTime endDate, Integer remindBeforeMinutes
+    ) {
+        int sortOrder = parent == null ? 0 : todoRepository.findMaxSortOrderByParent(parent) + 1;
         // 리마인드는 TodoReminderScheduler가 remindBeforeMinutes 기준으로 발송
-        return TodoResponse.from(todo);
+        return todoRepository.save(Todo.of(
+                category, parent, assignee, type, name, startDate, endDate, remindBeforeMinutes, sortOrder
+        ));
     }
 
     @Transactional(readOnly = true)
-    public Page<TodoResponse> getCategoryTodos(User viewer, Long categoryId, int page, int size) {
+    public Page<TodoResponse> getCategoryTodos(Category category, int page, int size) {
         Pageable pageable = toPageable(page, size);
-        Category category = categoryService.getActiveCategory(categoryId);
-        todoAuthorityService.checkView(category, viewer);
         return todoRepository.findActiveByCategory(category, pageable).map(TodoResponse::from);
     }
 
     @Transactional(readOnly = true)
-    public TodoResponse getTodo(User viewer, Long todoId) {
-        Todo todo = getActiveTodo(todoId);
-        todoAuthorityService.checkView(todo.getCategory(), viewer);
+    public TodoResponse getTodo(Todo todo) {
         return TodoResponse.from(todo);
     }
 
@@ -114,18 +105,7 @@ public class TodoServiceImpl implements TodoService {
         return todoRepository.findDashboardBacklogs(me, TodoType.BACKLOG, from, from.plusDays(1), pageable);
     }
 
-    // 아직 생성되지 않은 반복 회차 : 저장된 데이터가 아니라 반복 규칙으로 계산 (쿼리 2회), 페이지 자르기는 호출 측
-    @Transactional(readOnly = true)
-    public List<DashboardTodoResponse> getDashboardPreviews(User me, LocalDate date) {
-        LocalDateTime from = date.atStartOfDay();
-        List<DashboardTodoResponse> previews = new ArrayList<>(routineService.getPreviews(me, from, from.plusDays(1)));
-        previews.sort(Comparator.comparing(DashboardTodoResponse::startDate).thenComparing(DashboardTodoResponse::routineId));
-        return previews;
-    }
-
-    public TodoResponse updateTodo(User actor, Long todoId, TodoType type, String name, LocalDateTime startDate, LocalDateTime endDate, Integer remindBeforeMinutes) {
-        Todo todo = getActiveTodo(todoId);
-        todoAuthorityService.checkEdit(todo.getCategory(), actor);
+    public TodoResponse updateTodo(Todo todo, TodoType type, String name, LocalDateTime startDate, LocalDateTime endDate, Integer remindBeforeMinutes) {
         validatePeriod(startDate, endDate);
         // 반복 원본의 시작 시각은 회차 계산의 기준 : 바꾸면 이후 회차가 원래 시각과 새 시각에 중복 생성됨
         if (todo.isRoutineOrigin() && !todo.getStartDate().equals(startDate)) {
@@ -135,28 +115,25 @@ public class TodoServiceImpl implements TodoService {
         return TodoResponse.from(todo);
     }
 
-    public TodoResponse toggleComplete(User actor, Long todoId) {
-        Todo todo = getActiveTodo(todoId);
-        todoAuthorityService.checkComplete(todo, actor);
+    public TodoResponse toggleComplete(Todo todo) {
         todo.toggleComplete();
         // 완료 활동은 팔로워 타임라인에 조회 시점에 노출 (TimelineService), 완료 취소 시 제외
         return TodoResponse.from(todo);
     }
 
-    // 팀 투두의 담당자는 1명, 새 담당자 지정 시 기존 담당자는 즉시 해제
-    public TodoResponse updateAssignee(User actor, Long todoId, User assignee) {
-        Todo todo = getActiveTodo(todoId);
+    public void requireTeamTodo(Todo todo) {
         if (!todo.getCategory().isTeamCategory()) {
             throw new CommonException(TodoErrorCode.NOT_TEAM_TODO);
         }
-        todoAuthorityService.checkAssign(todo.getCategory(), actor, assignee);
+    }
+
+    // 팀 투두의 담당자는 1명, 새 담당자 지정 시 기존 담당자는 즉시 해제
+    public TodoResponse updateAssignee(Todo todo, User assignee) {
         todo.updateAssignee(assignee);
         return TodoResponse.from(todo);
     }
 
-    public void updateChildOrder(User actor, Long parentTodoId, List<Long> childTodoIds) {
-        Todo parent = getActiveTodo(parentTodoId);
-        todoAuthorityService.checkEdit(parent.getCategory(), actor);
+    public void updateChildOrder(Todo parent, List<Long> childTodoIds) {
         List<Todo> children = todoRepository.findAllByParentTodoAndDeletedAtIsNullOrderBySortOrderAsc(parent);
 
         Set<Long> requested = new HashSet<>(childTodoIds);
@@ -172,9 +149,7 @@ public class TodoServiceImpl implements TodoService {
     }
 
     // 삭제 확정 즉시 목록에서 제외, 부모 투두 삭제 시 자식 투두도 함께 삭제
-    public void deleteTodo(User actor, Long todoId) {
-        Todo todo = getActiveTodo(todoId);
-        todoAuthorityService.checkEdit(todo.getCategory(), actor);
+    public void deleteTodo(Todo todo) {
         todo.delete();
         if (!todo.isChild()) {
             todoRepository.softDeleteChildren(todo, todo.getDeletedAt());
@@ -183,15 +158,14 @@ public class TodoServiceImpl implements TodoService {
     }
 
     @Transactional(readOnly = true)
-    public Page<TodoResponse> getRestorableTodos(User actor, Long categoryId, int page, int size) {
+    public Page<TodoResponse> getRestorableTodos(Category category, int page, int size) {
         Pageable pageable = toPageable(page, size);
-        Category category = categoryService.getActiveCategory(categoryId);
-        todoAuthorityService.checkEdit(category, actor);
         return todoRepository.findRestorableByCategory(category, retentionThreshold(), pageable).map(TodoResponse::from);
     }
 
-    // 삭제 후 30일 이내에만 원래 카테고리와 유형으로 복구, 함께 삭제된 자식 투두도 복구
-    public TodoResponse restoreTodo(User actor, Long todoId) {
+    // 삭제 후 30일 이내에만 원래 카테고리와 유형으로 복구 (카테고리 상태·권한 확인은 호출 측)
+    @Transactional(readOnly = true)
+    public Todo getRestorableTodo(Long todoId) {
         Todo todo = todoRepository.findWithAllById(todoId).orElseThrow(
                 () -> new CommonException(TodoErrorCode.TODO_NOT_FOUND)
         );
@@ -201,8 +175,11 @@ public class TodoServiceImpl implements TodoService {
         if (!todo.getDeletedAt().isAfter(retentionThreshold())) {
             throw new CommonException(TodoErrorCode.RESTORE_EXPIRED);
         }
-        Category category = categoryService.getActiveCategory(todo.getCategory().getId());
-        todoAuthorityService.checkEdit(category, actor);
+        return todo;
+    }
+
+    // 함께 삭제된 자식 투두도 복구
+    public TodoResponse restoreTodo(Todo todo) {
         if (todo.isChild() && todo.getParentTodo().isDeleted()) {
             throw new CommonException(TodoErrorCode.PARENT_TODO_DELETED);
         }
@@ -218,37 +195,9 @@ public class TodoServiceImpl implements TodoService {
         return TodoResponse.from(todo);
     }
 
-    // 반복 설정·해제는 반복에 속한 투두(원본·회차) 어디서든 가능, 반복 중이면 변경 범위(scope)를 함께 받음
-    public RoutineResponse upsertRoutine(User actor, Long todoId, RoutineRequest request) {
-        Todo todo = getActiveTodo(todoId);
-        todoAuthorityService.checkEdit(todo.getCategory(), actor);
-        return routineService.upsertRoutine(todo, request.durationType(), request.duration(), request.daysOfWeek(), request.repeatEndDate(), request.scope());
-    }
-
-    public void deleteRoutine(User actor, Long todoId, RoutineScope scope) {
-        Todo todo = getActiveTodo(todoId);
-        todoAuthorityService.checkEdit(todo.getCategory(), actor);
-        routineService.deleteRoutine(todo, scope);
-    }
-
     @Transactional(readOnly = true)
     public Optional<Todo> findTodo(Long todoId) {
         return todoRepository.findWithAllById(todoId);
-    }
-
-    // 소유자가 탈퇴했거나 팀이 삭제된 카테고리의 투두도 존재하지 않는 것으로 처리
-    private Todo getActiveTodo(Long todoId) {
-        Todo todo = todoRepository.findWithAllById(todoId)
-                .filter(t -> !t.isDeleted())
-                .orElseThrow(() -> new CommonException(TodoErrorCode.TODO_NOT_FOUND));
-        categoryService.getActiveCategory(todo.getCategory().getId());
-        return todo;
-    }
-
-    private void validatePeriod(LocalDateTime startDate, LocalDateTime endDate) {
-        if (endDate.isBefore(startDate)) {
-            throw new CommonException(TodoErrorCode.INVALID_TODO_PERIOD);
-        }
     }
 
     private LocalDateTime retentionThreshold() {

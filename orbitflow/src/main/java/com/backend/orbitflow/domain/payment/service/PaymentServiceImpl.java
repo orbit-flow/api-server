@@ -15,7 +15,6 @@ import com.backend.orbitflow.domain.point.entity.PointTransaction;
 import com.backend.orbitflow.domain.point.enums.PointTransactionType;
 import com.backend.orbitflow.domain.point.service.PointLedger;
 import com.backend.orbitflow.domain.user.entity.User;
-import com.backend.orbitflow.domain.user.service.UserService;
 import com.backend.orbitflow.global.common.error.ErrorCode;
 import com.backend.orbitflow.global.common.error.exception.CommonException;
 import lombok.extern.slf4j.Slf4j;
@@ -57,7 +56,6 @@ public class PaymentServiceImpl implements PaymentService {
 
     private final PaymentRepository paymentRepository;
     private final PointLedger pointLedger;
-    private final UserService userService;
     private final PaymentGateway paymentGateway;
     private final TransactionTemplate transactionTemplate;
     private final ApplicationEventPublisher eventPublisher;
@@ -65,14 +63,12 @@ public class PaymentServiceImpl implements PaymentService {
     public PaymentServiceImpl(
             PaymentRepository paymentRepository,
             PointLedger pointLedger,
-            UserService userService,
             PaymentGateway paymentGateway,
             PlatformTransactionManager transactionManager,
             ApplicationEventPublisher eventPublisher
     ) {
         this.paymentRepository = paymentRepository;
         this.pointLedger = pointLedger;
-        this.userService = userService;
         this.paymentGateway = paymentGateway;
         this.eventPublisher = eventPublisher;
         // 포인트 변경 : READ COMMITTED 필수 (PointLedger 참고)
@@ -81,10 +77,9 @@ public class PaymentServiceImpl implements PaymentService {
     }
 
     // 결제 금액·적립 포인트는 서버가 상품으로 결정, 최근 30분 안에 만든 승인 대기(READY) 주문은 사용자당 최대 5건
-    // 사용자 행 락으로 동시 주문 생성을 직렬화 (락 이후 조회가 최신 커밋을 보도록 READ_COMMITTED 필수)
+    // 사용자 행 락(파사드가 같은 트랜잭션에서 선점)으로 동시 주문 생성을 직렬화 (락 이후 조회가 최신 커밋을 보도록 READ_COMMITTED 필수)
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public PaymentResponse createPayment(User me, PointPackage pointPackage) {
-        userService.lockUser(me.getId());
         LocalDateTime since = LocalDateTime.now().minusMinutes(READY_COUNT_WINDOW_MINUTES);
         if (paymentRepository.countByUserAndStatusAndCreatedAtAfter(me, PaymentStatus.READY, since) >= MAX_READY_PAYMENTS) {
             throw new CommonException(PaymentErrorCode.TOO_MANY_READY_PAYMENTS);

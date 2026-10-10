@@ -1,12 +1,8 @@
 package com.backend.orbitflow.domain.todo.service;
 
 import com.backend.orbitflow.domain.category.entity.Category;
-import com.backend.orbitflow.domain.category.service.CategoryAuthorityService;
-import com.backend.orbitflow.domain.team.entity.Team;
-import com.backend.orbitflow.domain.team.entity.TeamMember;
 import com.backend.orbitflow.domain.team.enums.TeamPermission;
 import com.backend.orbitflow.domain.team.error.TeamErrorCode;
-import com.backend.orbitflow.domain.team.service.TeamAuthorityService;
 import com.backend.orbitflow.domain.todo.entity.Todo;
 import com.backend.orbitflow.domain.todo.error.TodoErrorCode;
 import com.backend.orbitflow.domain.user.entity.User;
@@ -22,18 +18,15 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional(readOnly = true)
 public class TodoAuthorityServiceImpl implements TodoAuthorityService {
 
-    private final CategoryAuthorityService categoryAuthorityService;
-    private final TeamAuthorityService teamAuthorityService;
-
-    public void checkView(Category category, User viewer) {
-        if (!categoryAuthorityService.canView(category, viewer)) {
+    public void checkView(boolean viewable) {
+        if (!viewable) {
             throw new CommonException(TodoErrorCode.TODO_ACCESS_DENIED);
         }
     }
 
-    public void checkEdit(Category category, User actor) {
+    public void checkEdit(Category category, User actor, Integer teamMask) {
         if (category.isTeamCategory()) {
-            teamAuthorityService.checkPermission(category.getTeam(), actor, TeamPermission.MANAGE_TODOS);
+            checkPermission(teamMask, TeamPermission.MANAGE_TODOS);
             return;
         }
         if (!category.isOwnedBy(actor)) {
@@ -42,22 +35,40 @@ public class TodoAuthorityServiceImpl implements TodoAuthorityService {
     }
 
     // 팀 투두는 담당자 본인 또는 MANAGE_TODOS 권한 보유자가 완료 처리
-    public void checkComplete(Todo todo, User actor) {
+    public void checkComplete(Todo todo, User actor, Integer teamMask) {
         Category category = todo.getCategory();
         if (category.isTeamCategory() && todo.getAssignee().getId().equals(actor.getId())) {
-            teamAuthorityService.getMember(category.getTeam(), actor);
+            requireMember(teamMask);
             return;
         }
-        checkEdit(category, actor);
+        checkEdit(category, actor, teamMask);
     }
 
     // ASSIGN_TODOS 권한 보유자만 배정, 담당자는 팀 구성원이어야 함
-    public void checkAssign(Category category, User actor, User assignee) {
-        Team team = category.getTeam();
-        teamAuthorityService.checkPermission(team, actor, TeamPermission.ASSIGN_TODOS);
-        TeamMember member = teamAuthorityService.findMember(team, assignee).orElse(null);
-        if (member == null) {
+    public void checkAssign(Integer actorMask, boolean assigneeMember) {
+        checkPermission(actorMask, TeamPermission.ASSIGN_TODOS);
+        if (!assigneeMember) {
             throw new CommonException(TeamErrorCode.MEMBER_NOT_FOUND);
+        }
+    }
+
+    public void checkAssignOnCreate(Category category, User actor, User assignee, Integer actorMask, boolean assigneeMember) {
+        if (category.isTeamCategory() && !assignee.getId().equals(actor.getId())) {
+            checkAssign(actorMask, assigneeMember);
+        }
+    }
+
+    // 비소속 사용자에게는 팀 존재 여부를 노출하지 않도록 NOT_FOUND 처리 (TeamAuthorityService.checkPermission과 같은 규칙)
+    private void checkPermission(Integer teamMask, TeamPermission permission) {
+        requireMember(teamMask);
+        if (!permission.isGranted(teamMask)) {
+            throw new CommonException(TeamErrorCode.NO_TEAM_PERMISSION);
+        }
+    }
+
+    private void requireMember(Integer teamMask) {
+        if (teamMask == null) {
+            throw new CommonException(TeamErrorCode.TEAM_NOT_FOUND);
         }
     }
 }

@@ -48,6 +48,6 @@ public class NotificationFacade {
     }
 
     private User me(AuthUser authUser) {
-        return userService.getByUuid(authUser.getUuid());
+        return userService.getActiveByUuid(authUser.getUuid());
     }
 }

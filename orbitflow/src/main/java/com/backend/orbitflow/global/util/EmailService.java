@@ -57,6 +57,8 @@ public class EmailService {
         return message;
     }
 
+    // 비동기 발송 : 메일 실패가 탈퇴 결과에 영향을 주지 않으며, 실패 로그는 이 클래스에서 남김
+    @Async
     public void sendWithdrawalEmail(String email, String name) {
         String title = "OrbitFlow 회원 탈퇴 처리 안내";
         String content = "<html>"
@@ -67,7 +69,11 @@ public class EmailService {
                 + "<footer style = 'color: grey; font-size: small;'>"
                 + "<p>이 메일은 자동응답 메일입니다. 회신하지 마시기 바랍니다.</p>"
                 + "</footer> </body> </html>";
-        sendEmail(email, title, content);
+        try {
+            sendEmail(email, title, content);
+        } catch (RuntimeException e) {
+            log.error("회원 탈퇴 안내 메일 발송 실패", e);
+        }
     }
 
     // 비동기 발송 : 가입 여부에 따라 응답 시간이 달라져 계정 존재가 드러나지 않도록 요청 스레드에서 분리

@@ -2,11 +2,13 @@ package com.backend.orbitflow.domain.todo.service;
 
 import com.backend.orbitflow.domain.todo.dto.response.RoutineResponse;
 import com.backend.orbitflow.domain.todo.dto.response.TodoResponse;
+import com.backend.orbitflow.domain.todo.entity.Routine;
 import com.backend.orbitflow.domain.todo.entity.Todo;
 import com.backend.orbitflow.domain.todo.enums.DurationType;
 import com.backend.orbitflow.domain.todo.enums.RoutineScope;
 import com.backend.orbitflow.domain.user.entity.User;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import com.backend.orbitflow.domain.todo.dto.response.DashboardTodoResponse;
@@ -18,7 +20,9 @@ public interface RoutineService {
 
     RoutineResponse upsertRoutine(Todo todo, DurationType durationType, int duration, Integer daysOfWeek, LocalDateTime repeatEndDate, RoutineScope scope);
     void deleteRoutine(Todo todo, RoutineScope scope);
-    TodoResponse createOccurrence(User actor, Long routineId, LocalDateTime startDate);
+    Routine getRoutine(Long routineId);
+    TodoResponse createOccurrence(Routine routine, LocalDateTime startDate);
     List<DashboardTodoResponse> getPreviews(User user, LocalDateTime from, LocalDateTime to);
+    List<DashboardTodoResponse> getDashboardPreviews(User me, LocalDate date);
     void generateAll();
 }

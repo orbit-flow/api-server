@@ -1,8 +1,6 @@
 package com.backend.orbitflow.domain.suspension.service;
 
-import com.backend.orbitflow.domain.auth.service.TokenService;
 import com.backend.orbitflow.domain.suspension.event.UserSuspendedEvent;
-import com.backend.orbitflow.domain.report.service.ReportService;
 import com.backend.orbitflow.domain.suspension.cache.SuspendedUserCache;
 import com.backend.orbitflow.domain.suspension.dto.response.SuspendedAccountResponse;
 import com.backend.orbitflow.domain.suspension.dto.response.SuspensionListResponse;
@@ -14,7 +12,6 @@ import com.backend.orbitflow.domain.suspension.repository.SuspensionRepository;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.domain.user.enums.UserRole;
 import com.backend.orbitflow.domain.user.enums.UserStatus;
-import com.backend.orbitflow.domain.user.service.UserService;
 import com.backend.orbitflow.global.common.error.exception.CommonException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -43,15 +40,12 @@ public class SuspensionServiceImpl implements SuspensionService {
 
     private final SuspensionRepository suspensionRepository;
     private final SuspendedUserCache suspendedUserCache;
-    private final TokenService tokenService;
-    private final ReportService reportService;
-    private final UserService userService;
     private final ApplicationEventPublisher eventPublisher;
 
-    // 대상 사용자 행 락 아래에서 진행 중인 정지를 확인하므로 동시 정지 요청이 직렬화됨 (READ COMMITTED 필수 : 락 이후 조회가 앞선 커밋을 봐야 함)
+    // 정지 가능한 대상인지 확인 : 호출 측(SuspensionFacade)이 대상 사용자 행 락을 먼저 잡은 같은 트랜잭션에서 호출해야 동시 정지 요청이 직렬화됨
+    // (READ COMMITTED 필수 : 락 이후 조회가 앞선 커밋을 봐야 함)
     @Transactional(isolation = Isolation.READ_COMMITTED)
-    public SuspensionResponse suspend(User admin, User target, String reason, LocalDateTime expiresAt, Long reportId) {
-        userService.lockUser(target.getId());
+    public void checkSuspendable(User target, LocalDateTime expiresAt) {
         if (target.getRole() == UserRole.ROLE_ADMIN) {
             throw new CommonException(SuspensionErrorCode.CANNOT_SUSPEND_ADMIN);
         }
@@ -59,17 +53,15 @@ public class SuspensionServiceImpl implements SuspensionService {
         if (suspensionRepository.findActiveByUser(target).isPresent()) {
             throw new CommonException(SuspensionErrorCode.ALREADY_SUSPENDED);
         }
-        if (reportId != null) {
-            reportService.sanction(reportId, target);
-        }
+    }
 
+    // 확인(checkSuspendable)과 신고 제재 처리 이후 같은 트랜잭션에서 정지 저장, refresh token 삭제는 호출 측이 커밋 후 수행
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public SuspensionResponse suspend(User admin, User target, String reason, LocalDateTime expiresAt) {
         Suspension suspension = suspensionRepository.save(Suspension.of(target, reason, expiresAt, admin));
         target.updateUserStatus(UserStatus.BANNED);
-        afterCommit(() -> {
-            // 재발급 차단 + 이미 발급된 access token 차단
-            tokenService.deleteRefreshToken(target.getUuid());
-            suspendedUserCache.mark(target.getUuid(), expiresAt);
-        });
+        // 이미 발급된 access token 차단
+        afterCommit(() -> suspendedUserCache.mark(target.getUuid(), expiresAt));
         eventPublisher.publishEvent(new UserSuspendedEvent(target.getUuid()));
         // TODO: 알림 도메인 구현 후 정지 사실 고지 (이메일 발송 등)
         return SuspensionResponse.from(suspension);

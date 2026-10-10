@@ -13,10 +13,12 @@ import com.backend.orbitflow.global.common.dto.response.PageResponse;
 import com.backend.orbitflow.global.security.AuthUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Arrays;
 
-// 승인·환불은 PaymentService가 트랜잭션 경계를 직접 제어하므로 파사드에 @Transactional을 두지 않음
+// 승인·환불은 PaymentService가 트랜잭션 경계를 직접 제어하므로 파사드에 @Transactional을 두지 않음 (주문 생성만 사용자 행 락과 같은 트랜잭션 필요)
 @Component
 @RequiredArgsConstructor
 public class PaymentFacade {
@@ -31,8 +33,12 @@ public class PaymentFacade {
                 .toList(), page, size);
     }
 
+    // 사용자 행 락으로 동시 주문 생성을 직렬화 : 락과 주문 쓰기를 한 트랜잭션에 묶음 (READ_COMMITTED 필수)
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public PaymentResponse createPayment(AuthUser authUser, PaymentCreateRequest request) {
-        return paymentService.createPayment(me(authUser), request.pointPackage());
+        User me = me(authUser);
+        userService.lockUser(me.getId());
+        return paymentService.createPayment(me, request.pointPackage());
     }
 
     public PaymentResponse confirm(AuthUser authUser, PaymentConfirmRequest request) {
@@ -48,6 +54,6 @@ public class PaymentFacade {
     }
 
     private User me(AuthUser authUser) {
-        return userService.getByUuid(authUser.getUuid());
+        return userService.getActiveByUuid(authUser.getUuid());
     }
 }

@@ -27,7 +27,7 @@ public class BlockFacade {
     public PageResponse<BlockListResponse> getBlockList(AuthUser authUser, int page, int size, String keyword) {
         return PageResponse.from(
                 blockService.getBlockList(
-                        userService.getByUuid(authUser.getUuid()),
+                        userService.getActiveByUuid(authUser.getUuid()),
                         page,
                         size,
                         keyword
@@ -41,7 +41,7 @@ public class BlockFacade {
         if (authUser.getUuid().equals(uuid)) {
             throw new CommonException(BlockErrorCode.SELF_BLOCK);
         }
-        User requestUser = userService.getByUuid(authUser.getUuid());
+        User requestUser = userService.getActiveByUuid(authUser.getUuid());
         User targetUser = userService.getByUuid(uuid);
 
         Block block = blockService.toggleBlock(requestUser, targetUser);

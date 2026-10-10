@@ -17,5 +17,5 @@ public interface OAuthRepository extends JpaRepository<OAuthAccount, Long> {
 
     Optional<OAuthAccount> findByUserAndProvider(User user, Provider provider);
 
-    long countByUser(User user);
+    void deleteByUser(User user);
 }

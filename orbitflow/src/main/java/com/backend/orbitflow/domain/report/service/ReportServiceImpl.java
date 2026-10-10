@@ -1,10 +1,7 @@
 package com.backend.orbitflow.domain.report.service;
 
-import com.backend.orbitflow.domain.block.service.BlockService;
 import com.backend.orbitflow.domain.comment.entity.Comment;
-import com.backend.orbitflow.domain.comment.service.CommentService;
 import com.backend.orbitflow.domain.post.entity.Post;
-import com.backend.orbitflow.domain.post.service.PostService;
 import com.backend.orbitflow.domain.report.dto.response.ReportResponse;
 import com.backend.orbitflow.domain.report.entity.UserReport;
 import com.backend.orbitflow.domain.report.enums.ReportContentType;
@@ -12,7 +9,6 @@ import com.backend.orbitflow.domain.report.enums.ReportStatus;
 import com.backend.orbitflow.domain.report.error.ReportErrorCode;
 import com.backend.orbitflow.domain.report.repository.UserReportRepository;
 import com.backend.orbitflow.domain.user.entity.User;
-import com.backend.orbitflow.domain.user.service.UserService;
 import com.backend.orbitflow.global.common.error.exception.CommonException;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -22,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
+import java.util.Optional;
 import com.backend.orbitflow.domain.report.dto.response.ReportListResponse;
 
 @Service
@@ -34,16 +31,14 @@ public class ReportServiceImpl implements ReportService {
     private static final int DAILY_REPORT_LIMIT = 20;
 
     private final UserReportRepository userReportRepository;
-    private final CommentService commentService;
-    private final UserService userService;
-    private final PostService postService;
-    private final BlockService blockService;
 
     // 자기 자신·자신의 콘텐츠는 신고 불가, 같은 대상에 처리 중인 신고가 있으면 중복 접수 불가
     // 신고자가 볼 수 없는 대상(차단·비공개 등)은 존재 여부가 드러나지 않도록 없는 대상으로 처리, 하루 신고 횟수 제한
-    // 신고자 행 락으로 중복 확인과 저장을 직렬화 (호출하는 파사드 트랜잭션은 READ_COMMITTED 필수)
-    public ReportResponse createReport(User reporter, ReportContentType contentType, Long targetId, User targetUser, String reason) {
-        userService.lockUser(reporter.getId());
+    // 신고자 행 락은 호출하는 파사드가 같은 트랜잭션에서 먼저 잡아 중복 확인과 저장을 직렬화 (파사드 트랜잭션은 READ_COMMITTED 필수)
+    // 대상 조회(열람 가능한 게시글·댓글·차단 관계)는 다른 도메인 서비스가 필요해 파사드가 미리 조회해 전달하고, 판정 순서는 여기서 그대로 유지
+    // viewablePost : POST는 대상 게시글, COMMENT는 댓글이 달린 게시글 (열람 불가면 empty), blocked : COMMENT는 댓글 작성자, USER는 대상 사용자와의 차단 관계
+    public UserReport createReport(User reporter, ReportContentType contentType, Long targetId, User targetUser,
+                                   Optional<Post> viewablePost, Optional<Comment> targetComment, boolean blocked, String reason) {
         if (userReportRepository.countByReporterAndCreatedAtGreaterThanEqual(reporter, LocalDate.now().atStartOfDay()) >= DAILY_REPORT_LIMIT) {
             throw new CommonException(ReportErrorCode.REPORT_LIMIT_EXCEEDED);
         }
@@ -51,20 +46,24 @@ public class ReportServiceImpl implements ReportService {
         String targetSnapshot;
         Long reportedId = switch (contentType) {
             case POST -> {
-                Post post = getViewablePost(reporter, requireTargetId(targetId));
+                requireTargetId(targetId);
+                Post post = viewablePost.orElseThrow(() -> new CommonException(ReportErrorCode.REPORT_TARGET_NOT_FOUND));
                 validateNotSelf(reporter, post.getUser());
                 reportedUser = post.getUser();
                 targetSnapshot = snapshotOf(post.getContent());
                 yield post.getId();
             }
             case COMMENT -> {
-                Comment comment = commentService.findById(requireTargetId(targetId)).orElseThrow(
+                requireTargetId(targetId);
+                Comment comment = targetComment.orElseThrow(
                         () -> new CommonException(ReportErrorCode.REPORT_TARGET_NOT_FOUND)
                 );
                 validateNotSelf(reporter, comment.getUser());
                 // 댓글이 달린 게시글을 볼 수 없거나 댓글 작성자와 차단 관계이면 없는 대상으로 처리
-                getViewablePost(reporter, comment.getPost().getId());
-                if (comment.getUser().getDeletedAt() != null || blockService.isBlocked(comment.getUser(), reporter)) {
+                if (viewablePost.isEmpty()) {
+                    throw new CommonException(ReportErrorCode.REPORT_TARGET_NOT_FOUND);
+                }
+                if (comment.getUser().getDeletedAt() != null || blocked) {
                     throw new CommonException(ReportErrorCode.REPORT_TARGET_NOT_FOUND);
                 }
                 reportedUser = comment.getUser();
@@ -76,7 +75,7 @@ public class ReportServiceImpl implements ReportService {
                     throw new CommonException(ReportErrorCode.INVALID_REPORT_TARGET);
                 }
                 validateNotSelf(reporter, targetUser);
-                if (blockService.isBlocked(targetUser, reporter)) {
+                if (blocked) {
                     throw new CommonException(ReportErrorCode.REPORT_TARGET_NOT_FOUND);
                 }
                 reportedUser = targetUser;
@@ -91,8 +90,7 @@ public class ReportServiceImpl implements ReportService {
                 reporter, contentType, reportedId, ReportStatus.IN_PROGRESS)) {
             throw new CommonException(ReportErrorCode.DUPLICATE_REPORT);
         }
-        UserReport report = userReportRepository.save(UserReport.of(reporter, reportedId, contentType, reason, reportedUser, targetSnapshot));
-        return ReportResponse.of(report, resolveTarget(report));
+        return userReportRepository.save(UserReport.of(reporter, reportedId, contentType, reason, reportedUser, targetSnapshot));
     }
 
     @Transactional(readOnly = true)
@@ -106,19 +104,18 @@ public class ReportServiceImpl implements ReportService {
     }
 
     @Transactional(readOnly = true)
-    public ReportResponse getReport(Long reportId) {
-        UserReport report = getReportEntity(reportId);
-        return ReportResponse.of(report, resolveTarget(report));
+    public UserReport getReport(Long reportId) {
+        return getReportEntity(reportId);
     }
 
-    public ReportResponse updateStatus(Long reportId, ReportStatus status) {
+    public UserReport updateStatus(Long reportId, ReportStatus status) {
         UserReport report = getReportEntity(reportId);
         if (!report.getStatus().canTransitTo(status)) {
             throw new CommonException(ReportErrorCode.INVALID_STATUS_TRANSITION);
         }
         report.updateStatus(status);
         // TODO: 알림 도메인 구현 후 신고자에게 처리 결과 고지
-        return ReportResponse.of(report, resolveTarget(report));
+        return report;
     }
 
     // 정지 처리 시 호출 : 위반이 확인된(CONFIRMED) 신고의 피신고자와 정지 대상이 같아야 함
@@ -140,30 +137,26 @@ public class ReportServiceImpl implements ReportService {
         );
     }
 
-    // 신고 대상 요약 (대상이 삭제되었으면 exists = false)
-    private ReportResponse.Target resolveTarget(UserReport report) {
+    // 신고 대상 요약 (대상이 삭제되었으면 exists = false), 대상 조회는 호출 측에서 신고 유형에 맞는 것만 조회해 전달
+    @Transactional(readOnly = true)
+    public ReportResponse toResponse(UserReport report, Optional<Post> targetPost, Optional<Comment> targetComment, Optional<User> targetUser) {
+        return ReportResponse.of(report, resolveTarget(report, targetPost, targetComment, targetUser));
+    }
+
+    private ReportResponse.Target resolveTarget(UserReport report, Optional<Post> targetPost, Optional<Comment> targetComment, Optional<User> targetUser) {
         Long reportedId = report.getReportedId();
         return switch (report.getContentType()) {
-            case POST -> postService.findById(reportedId)
+            case POST -> targetPost
                     .map(post -> new ReportResponse.Target(post.getId(), post.getUser().getUuid(), summarize(post.getContent()), true))
                     .orElse(ReportResponse.Target.missing(reportedId));
-            case COMMENT -> commentService.findById(reportedId)
+            case COMMENT -> targetComment
                     .map(comment -> new ReportResponse.Target(comment.getId(), comment.getUser().getUuid(), summarize(comment.getContent()), true))
                     .orElse(ReportResponse.Target.missing(reportedId));
-            case USER -> userService.findById(reportedId)
+            case USER -> targetUser
                     .map(user -> new ReportResponse.Target(null, user.getUuid(), user.getName(), user.getDeletedAt() == null))
                     .orElse(ReportResponse.Target.missing(null));
             case DM -> ReportResponse.Target.missing(reportedId);
         };
-    }
-
-    // 게시글 단건 조회와 같은 기준(차단·카테고리 공개 범위)으로 확인, 실패 사유와 관계없이 없는 대상으로 처리
-    private Post getViewablePost(User reporter, Long postId) {
-        try {
-            return postService.getViewablePost(reporter, postId);
-        } catch (CommonException e) {
-            throw new CommonException(ReportErrorCode.REPORT_TARGET_NOT_FOUND);
-        }
     }
 
     private Long requireTargetId(Long targetId) {

@@ -3,7 +3,6 @@ package com.backend.orbitflow.domain.purge.service;
 import com.backend.orbitflow.domain.notification.enums.NotificationType;
 import com.backend.orbitflow.domain.notification.event.NotificationRequest;
 import com.backend.orbitflow.domain.team.entity.Team;
-import com.backend.orbitflow.domain.todo.service.TodoTransferService;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.global.util.S3Service;
 import com.backend.orbitflow.global.util.S3TransactionalFileManager;
@@ -20,6 +19,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Consumer;
 
 /**
@@ -35,6 +35,7 @@ import java.util.function.Consumer;
  *
  * <p>대상 단위(사용자·팀)마다 별도 트랜잭션으로 처리해 한 건의 실패가 전체를 막지 않음
  * <p>S3 파일은 연쇄 삭제 전에 목록을 수집하고 커밋 후 삭제
+ * <p>탈퇴 사용자는 투두 상속(TodoTransferService)이 중간에 필요해 DataPurgeScheduler가 사용자 단위 트랜잭션 안에서 단계별 메서드를 조율
  */
 @Slf4j
 @Service
@@ -49,32 +50,22 @@ public class DataPurgeService {
     private final TransactionTemplate transactionTemplate;
     private final S3Service s3Service;
     private final S3TransactionalFileManager s3FileManager;
-    private final TodoTransferService todoTransferService;
     private final ApplicationEventPublisher eventPublisher;
 
     public DataPurgeService(EntityManager em, PlatformTransactionManager transactionManager,
                             S3Service s3Service, S3TransactionalFileManager s3FileManager,
-                            TodoTransferService todoTransferService, ApplicationEventPublisher eventPublisher) {
+                            ApplicationEventPublisher eventPublisher) {
         this.em = em;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.s3Service = s3Service;
         this.s3FileManager = s3FileManager;
-        this.todoTransferService = todoTransferService;
         this.eventPublisher = eventPublisher;
-    }
-
-    public void purgeAll() {
-        LocalDateTime threshold = LocalDateTime.now().minusDays(RETENTION_DAYS);
-        int teams = purgeTeams(threshold);
-        int users = purgeWithdrawnUsers(threshold);
-        int todos = purgeTodos(threshold);
-        log.info("영구 삭제 완료 : 팀 {}건, 탈퇴 사용자 {}건, 투두 {}건", teams, users, todos);
     }
 
     // ---------- 탈퇴 사용자 ----------
 
-    public int purgeWithdrawnUsers(LocalDateTime threshold) {
-        List<Long> userIds = transactionTemplate.execute(s -> em.createQuery("""
+    public List<Long> findWithdrawnUserIds(LocalDateTime threshold) {
+        return transactionTemplate.execute(s -> em.createQuery("""
                         select u.id from User u
                         where u.deletedAt is not null and u.deletedAt < :threshold
                           and u.email not like :prefix
@@ -82,15 +73,28 @@ public class DataPurgeService {
                 .setParameter("threshold", threshold)
                 .setParameter("prefix", WITHDRAWN_EMAIL_PREFIX + "%")
                 .getResultList());
-        return runEach(userIds, "탈퇴 사용자", this::purgeUser);
     }
 
-    private void purgeUser(Long userId) {
-        // 목록 수집 이후 로그인으로 복구된 사용자를 지우지 않도록 락을 잡고 대상 조건을 다시 확인
+    // 사용자 단위 영구 삭제는 DataPurgeScheduler가 하나의 트랜잭션에서 1단계 -> 팀별 투두 상속 -> 3단계 순으로 호출
+    // 1단계 : 목록 수집 이후 로그인으로 복구된 사용자를 지우지 않도록 락을 잡고 대상 조건을 다시 확인 (대상이 아니면 empty)
+    public Optional<User> lockPurgeTarget(Long userId) {
         User user = em.find(User.class, userId, LockModeType.PESSIMISTIC_WRITE);
         if (user == null || !isPurgeTarget(user.getDeletedAt()) || (user.getEmail() != null && user.getEmail().startsWith(WITHDRAWN_EMAIL_PREFIX))) {
-            return;
+            return Optional.empty();
         }
+        return Optional.of(user);
+    }
+
+    // 2단계 준비 : 팀 소속 해제 대상 팀 (담당 미완료 팀 투두는 호출 측이 팀 탈퇴와 같은 규칙으로 상속, 완료 투두는 익명 사용자로 유지)
+    public List<Team> findJoinedTeams(User user) {
+        return em.createQuery("select m.team from TeamMember m where m.user = :user", Team.class)
+                .setParameter("user", user)
+                .getResultList();
+    }
+
+    // 3단계 : 나머지 종속 데이터 삭제와 식별정보 파기 (투두 상속 이후 호출)
+    public void purgeUserData(User user) {
+        Long userId = user.getId();
         Map<String, Object> byUser = Map.of("user", user);
 
         // 연쇄 삭제될 게시글 사진 (작성한 게시글 + 개인 투두에 달린 게시글)
@@ -102,12 +106,7 @@ public class DataPurgeService {
             files.add(user.getProfileImage());
         }
 
-        // 팀 소속 해제 : 담당 미완료 팀 투두는 팀 탈퇴와 같은 규칙으로 상속, 완료 투두는 익명 사용자로 유지
-        List<Team> teams = em.createQuery(
-                        "select m.team from TeamMember m where m.user = :user", Team.class)
-                .setParameter("user", user)
-                .getResultList();
-        teams.forEach(team -> notifyInherited(team, todoTransferService.inherit(team, user)));
+        // 팀 소속 해제 (투두 상속은 완료된 상태)
         update("delete from TeamMember m where m.user = :user", byUser);                 // 역할 부여·카테고리 권한 연쇄
         update("delete from TeamInvitation i where i.inviter = :user or i.invitee = :user", byUser);
 
@@ -135,9 +134,9 @@ public class DataPurgeService {
     }
 
     // 회원 탈퇴 후 영구 삭제로 상속된 투두 : 상속받은 구성원에게 팀별로 1건 (탈퇴한 사용자는 익명 처리)
-    private void notifyInherited(Team team, Map<Long, Integer> inherited) {
+    public void notifyInherited(Team team, Map<Long, Integer> inherited) {
         inherited.forEach((heirId, count) -> {
-            User heir = em.find(User.class, heirId);
+            User heir = em.find(User.class,  heirId);
             if (heir != null) {
                 eventPublisher.publishEvent(NotificationRequest.to(heir, NotificationType.TODO_ASSIGNED, null, null, team.getUuid(),
                         "'" + team.getName() + "' 팀을 떠난 탈퇴한 사용자님이 담당하던 투두 " + count + "개가 회원님에게 배정되었습니다."));

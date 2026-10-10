@@ -9,7 +9,6 @@ import com.backend.orbitflow.domain.avatar.error.AvatarErrorCode;
 import com.backend.orbitflow.domain.avatar.repository.AvatarRepository;
 import com.backend.orbitflow.domain.avatar.repository.UserItemRepository;
 import com.backend.orbitflow.domain.item.entity.Item;
-import com.backend.orbitflow.domain.item.service.ItemService;
 import com.backend.orbitflow.domain.point.entity.PointTransaction;
 import com.backend.orbitflow.domain.point.enums.PointTransactionType;
 import com.backend.orbitflow.domain.point.service.PointLedger;
@@ -33,7 +32,6 @@ public class AvatarServiceImpl implements AvatarService {
 
     private final AvatarRepository avatarRepository;
     private final UserItemRepository userItemRepository;
-    private final ItemService itemService;
     private final PointLedger pointLedger;
 
     @Transactional(readOnly = true)
@@ -73,9 +71,8 @@ public class AvatarServiceImpl implements AvatarService {
     // 판매 중인 아이템을 가격 이상의 포인트를 보유한 경우에만 구매, 구매 즉시 보유 목록에 추가 (취소·환급 불가)
     // 아바타 행 락을 먼저 잡고 보유·잔액을 확인하므로 동시 구매(같은 아이템 중복, 잔액 초과)가 직렬화됨
     @Transactional(isolation = Isolation.READ_COMMITTED)
-    public PurchaseResponse purchase(User me, Long itemId) {
+    public PurchaseResponse purchase(User me, Item item) {
         Avatar avatar = pointLedger.lock(me);
-        Item item = itemService.getItem(itemId);
         if (!item.isOnSale()) {
             throw new CommonException(AvatarErrorCode.ITEM_NOT_ON_SALE);
         }
