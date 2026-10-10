@@ -89,12 +89,14 @@ public class CategoryFacade {
         Category category = categoryService.getActiveCategory(categoryId);
         Visibility before = category.getVisibility();
         CategoryResponse response = categoryService.updateCategory(me, categoryId, request.name(), request.color(), request.visibility());
-        if (category.isTeamCategory() && before != request.visibility()) {
+        // 요청의 visibility가 null이면 기본값으로 저장되므로 저장된 값(응답)으로 비교
+        Visibility after = response.visibility();
+        if (category.isTeamCategory() && before != after) {
             Team team = category.getTeam();
             eventPublisher.publishEvent(NotificationRequest.toAll(teamAuthorityService.findMemberUsers(team),
                     NotificationType.CATEGORY_VISIBILITY_CHANGED, me, category.getId(), team.getUuid(),
                     "'" + team.getName() + "' 팀의 '" + category.getName() + "' 카테고리 공개 범위가 "
-                            + request.visibility() + "(으)로 변경되었습니다."));
+                            + after + "(으)로 변경되었습니다."));
         }
         return response;
     }

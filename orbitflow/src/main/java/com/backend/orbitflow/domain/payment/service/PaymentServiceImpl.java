@@ -10,6 +10,7 @@ import com.backend.orbitflow.domain.payment.error.PaymentErrorCode;
 import com.backend.orbitflow.domain.payment.gateway.PaymentGateway;
 import com.backend.orbitflow.domain.payment.gateway.PaymentGatewayException;
 import com.backend.orbitflow.domain.payment.repository.PaymentRepository;
+import com.backend.orbitflow.domain.avatar.entity.Avatar;
 import com.backend.orbitflow.domain.point.entity.PointTransaction;
 import com.backend.orbitflow.domain.point.enums.PointTransactionType;
 import com.backend.orbitflow.domain.point.service.PointLedger;
@@ -30,6 +31,7 @@ import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 /**
@@ -50,6 +52,8 @@ import java.util.UUID;
 public class PaymentServiceImpl implements PaymentService {
 
     private static final int MAX_READY_PAYMENTS = 5;
+    // 결제창을 닫아 승인되지 않은 주문이 영구히 제한에 걸리지 않도록 최근 주문만 셈
+    private static final long READY_COUNT_WINDOW_MINUTES = 30;
 
     private final PaymentRepository paymentRepository;
     private final PointLedger pointLedger;
@@ -76,12 +80,13 @@ public class PaymentServiceImpl implements PaymentService {
         this.transactionTemplate.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
     }
 
-    // 결제 금액·적립 포인트는 서버가 상품으로 결정, 승인 대기(READY) 주문은 사용자당 최대 5건
+    // 결제 금액·적립 포인트는 서버가 상품으로 결정, 최근 30분 안에 만든 승인 대기(READY) 주문은 사용자당 최대 5건
     // 사용자 행 락으로 동시 주문 생성을 직렬화 (락 이후 조회가 최신 커밋을 보도록 READ_COMMITTED 필수)
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public PaymentResponse createPayment(User me, PointPackage pointPackage) {
         userService.lockUser(me.getId());
-        if (paymentRepository.countByUserAndStatus(me, PaymentStatus.READY) >= MAX_READY_PAYMENTS) {
+        LocalDateTime since = LocalDateTime.now().minusMinutes(READY_COUNT_WINDOW_MINUTES);
+        if (paymentRepository.countByUserAndStatusAndCreatedAtAfter(me, PaymentStatus.READY, since) >= MAX_READY_PAYMENTS) {
             throw new CommonException(PaymentErrorCode.TOO_MANY_READY_PAYMENTS);
         }
         Payment payment = paymentRepository.save(Payment.of(
@@ -139,7 +144,7 @@ public class PaymentServiceImpl implements PaymentService {
         return result.response();
     }
 
-    // 충전한 포인트가 남아 있을 때만 환불 (이미 사용한 포인트는 환불 불가), 환불은 거래(REFUND)로 기록
+    // 충전 이후 포인트를 사용하지 않았을 때만 환불 (보너스·출석 포인트로 잔액이 충분해도 사용 이력이 있으면 불가), 환불은 거래(REFUND)로 기록
     public PaymentResponse refund(User me, String orderId, String reason) {
         return transactionTemplate.execute(status -> {
             Payment payment = lockOwnedPayment(me, orderId);
@@ -147,8 +152,15 @@ public class PaymentServiceImpl implements PaymentService {
                 throw new CommonException(PaymentErrorCode.PAYMENT_NOT_REFUNDABLE);
             }
 
+            // 아바타 락 이후에 사용 이력을 확인해 동시에 진행되는 구매를 놓치지 않음
+            // 승인된 결제 행은 환불 전까지 수정되지 않으므로 updatedAt이 승인 시각
+            Avatar locked = pointLedger.lock(me);
+            if (pointLedger.hasUsedSince(me, payment.getUpdatedAt())) {
+                throw new CommonException(PaymentErrorCode.PAYMENT_POINT_ALREADY_USED);
+            }
             // 포인트 차감을 먼저 수행 : 잔액 부족이면 PG 취소 전에 거부
-            PointTransaction transaction = pointLedger.withdraw(me, PointTransactionType.REFUND, payment.getPoint());
+            // PG 취소 중 아바타 락을 유지하는 이유 : 취소 후 차감하면 그 사이 구매로 잔액이 부족해져 돈만 환불되고 포인트가 남을 수 있음
+            PointTransaction transaction = pointLedger.withdraw(locked, me, PointTransactionType.REFUND, payment.getPoint());
             try {
                 paymentGateway.cancel(payment.getPaymentKey(), reason);
             } catch (PaymentGatewayException e) {

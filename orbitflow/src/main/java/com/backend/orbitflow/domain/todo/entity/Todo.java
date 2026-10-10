@@ -140,6 +140,11 @@ public class Todo extends SoftDeleteEntity {
         this.occurrenceDate = null;
     }
 
+    // 반복 규칙의 기준이 되는 원본 투두인지
+    public boolean isRoutineOrigin() {
+        return this.routine != null && this.routine.getTodo().getId().equals(this.id);
+    }
+
     public boolean isChild() {
         return this.parentTodo != null;
     }

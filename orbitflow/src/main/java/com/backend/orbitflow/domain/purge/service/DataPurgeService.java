@@ -172,7 +172,7 @@ public class DataPurgeService {
     // ---------- 삭제된 투두 ----------
 
     // 게시글이 연결된 투두와, 하위 투두가 남아 있는 투두는 제외 (하위부터 여러 차례에 걸쳐 삭제)
-    // 원본 투두가 삭제되면 반복 규칙은 연쇄 삭제되고 회차 투두의 routine_id는 null 처리
+    // 반복 규칙의 원본 투두도 제외 : 원본 삭제는 그 회차만 삭제한 것이고 규칙은 원본을 기준으로 계속 회차를 만듦 (규칙을 해제하면 삭제 대상)
     public int purgeTodos(LocalDateTime threshold) {
         int total = 0;
         for (int round = 0; round < MAX_TODO_ROUNDS; round++) {
@@ -182,6 +182,7 @@ public class DataPurgeService {
                                 where t.deletedAt is not null and t.deletedAt < :threshold
                                   and not exists (select p.id from Post p where p.todo = t)
                                   and not exists (select c.id from Todo c where c.parentTodo = t)
+                                  and not exists (select r.id from Routine r where r.todo = t)
                                 """, Long.class)
                         .setParameter("threshold", threshold)
                         .setMaxResults(TODO_BATCH_SIZE)

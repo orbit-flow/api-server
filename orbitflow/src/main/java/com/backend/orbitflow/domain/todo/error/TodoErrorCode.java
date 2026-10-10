@@ -74,7 +74,11 @@ public enum TodoErrorCode implements ErrorCode {
     OCCURRENCE_ALREADY_EXISTS(HttpStatus.CONFLICT,
             "이미 생성된(또는 삭제된) 회차입니다.",
             "https://orbitflow.com/errors/occurrence-already-exists",
-            "Occurrence Already Exists");
+            "Occurrence Already Exists"),
+    ROUTINE_ORIGIN_START_FIXED(HttpStatus.BAD_REQUEST,
+            "반복 일정의 첫 회차는 시작 시각을 변경할 수 없습니다. 반복을 해제한 뒤 다시 설정해주세요.",
+            "https://orbitflow.com/errors/routine-origin-start-fixed",
+            "Routine Origin Start Fixed");
 
     private final HttpStatus httpStatus;
     private final String message;

@@ -14,6 +14,7 @@ import com.backend.orbitflow.global.security.AuthUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.backend.orbitflow.global.common.dto.response.PageResponse;
@@ -63,7 +64,7 @@ public class TeamInvitationFacade {
     }
 
     // 가입한 본인과 팀 관리자(본인 제외)에게 알림
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public TeamInvitationResponse acceptInvitation(AuthUser authUser, String invitationUuid) {
         User me = userService.getByUuid(authUser.getUuid());
         TeamInvitationResponse response = teamInvitationService.acceptInvitation(me, invitationUuid);

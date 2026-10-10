@@ -50,7 +50,8 @@ public class NotificationServiceImpl implements NotificationService {
 
     // 본인 활동, 차단 관계, 이미 발송한 토글성 활동에는 알림을 생성하지 않음
     // 수신자 id·uuid만으로 같은 알림 일괄 발송 (팔로워 등 대량 수신자를 엔티티로 읽지 않도록), 차단 관계를 수신자 묶음 단위로 한 번에 확인 (수신자마다 조회하지 않음)
-    public void sendAll(Map<Long, String> receiverUuids, NotificationType type, User actor, Long targetId, String targetUuid, String content) {
+    // repeatable이면 토글성 활동 중복 제거를 하지 않음 (팔로우 요청 수락 등 일회성 결과)
+    public void sendAll(Map<Long, String> receiverUuids, NotificationType type, User actor, Long targetId, String targetUuid, String content, boolean repeatable) {
         List<Long> targets = receiverUuids.keySet().stream()
                 .filter(receiverId -> actor == null || !actor.getId().equals(receiverId))
                 .toList();
@@ -61,7 +62,7 @@ public class NotificationServiceImpl implements NotificationService {
                 ? Set.of()
                 : blockService.findBlockedUserIdsAmong(actor, targets);
         // 이미 발송한 수신자도 수신자 묶음 단위로 한 번에 확인
-        Set<Long> sent = actor == null || !ONCE_TYPES.contains(type)
+        Set<Long> sent = actor == null || repeatable || !ONCE_TYPES.contains(type)
                 ? Set.of()
                 : notificationRepository.findSentUserIds(targets, type, actor, onceTargetId(type, targetId));
         List<Long> receiverIds = targets.stream()

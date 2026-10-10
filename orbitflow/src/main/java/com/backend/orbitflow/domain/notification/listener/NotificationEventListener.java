@@ -25,6 +25,6 @@ public class NotificationEventListener {
             return;
         }
         notificationService.sendAll(request.receivers(), request.type(), request.actor(),
-                request.targetId(), request.targetUuid(), request.content());
+                request.targetId(), request.targetUuid(), request.content(), request.repeatable());
     }
 }

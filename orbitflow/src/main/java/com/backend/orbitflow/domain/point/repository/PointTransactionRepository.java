@@ -19,6 +19,9 @@ public interface PointTransactionRepository extends JpaRepository<PointTransacti
             User user, PointTransactionType type, LocalDateTime from, LocalDateTime to
     );
 
+    // from 이후 해당 유형의 거래가 있는지 (충전 이후 포인트 사용 여부 판정용)
+    boolean existsByUserAndTypeAndCreatedAtGreaterThanEqual(User user, PointTransactionType type, LocalDateTime from);
+
     boolean existsBySourceTransaction(PointTransaction sourceTransaction);
 
     @Query("select t from PointTransaction t join fetch t.user where t.id = :id")

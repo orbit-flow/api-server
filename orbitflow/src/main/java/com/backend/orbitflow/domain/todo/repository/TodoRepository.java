@@ -175,11 +175,13 @@ public interface TodoRepository extends JpaRepository<Todo, Long> {
     // 여러 반복 규칙의 [from, to] 구간에 이미 생성된 회차 슬롯 (규칙마다 조회하지 않음)
     // 슬롯 = 회차의 원래 시각 (옮긴 회차도 원래 슬롯 기준, 원본·기존 회차는 occurrenceDate가 없어 시작 시각)
     // 논리적 삭제된 회차 포함 : 삭제한 회차가 다시 미리보기·생성되지 않도록
+    // 다른 회차를 옮겨 차지한 시각(start_date)도 생성된 것으로 봄 : (routine_id, start_date) 유니크 제약과 충돌하지 않도록
     @Query("""
-            select new com.backend.orbitflow.domain.todo.dto.RoutineSlot(t.routine.id, coalesce(t.occurrenceDate, t.startDate))
+            select new com.backend.orbitflow.domain.todo.dto.RoutineSlot(t.routine.id, coalesce(t.occurrenceDate, t.startDate), t.startDate)
             from Todo t
             where t.routine in :routines
-              and coalesce(t.occurrenceDate, t.startDate) between :from and :to
+              and (coalesce(t.occurrenceDate, t.startDate) between :from and :to
+                   or t.startDate between :from and :to)
             """)
     List<RoutineSlot> findSlotsByRoutineIn(
             @Param("routines") Collection<Routine> routines,
@@ -190,7 +192,7 @@ public interface TodoRepository extends JpaRepository<Todo, Long> {
     @Query("""
             select count(t) > 0 from Todo t
             where t.routine = :routine
-              and coalesce(t.occurrenceDate, t.startDate) = :slot
+              and (coalesce(t.occurrenceDate, t.startDate) = :slot or t.startDate = :slot)
             """)
     boolean existsByRoutineAndSlot(@Param("routine") Routine routine, @Param("slot") LocalDateTime slot);
 
@@ -255,7 +257,7 @@ public interface TodoRepository extends JpaRepository<Todo, Long> {
             """)
     List<Category> findCategoriesWithIncompleteTodos(@Param("team") Team team, @Param("assignee") User assignee);
 
-    // 카테고리별 상속 대상 : 카테고리를 볼 수 있는 남은 구성원 중 권한이 가장 낮은 1명
+    // 카테고리별 상속 대상 : 카테고리를 볼 수 있는 남은 구성원 중 권한이 가장 낮은 1명 (탈퇴 유예·정지 사용자 제외)
     // 권한 = 보유 역할 mask의 OR 합산 (소유자는 전체 권한 63), 비트 수 → mask 값 → 가입 순으로 낮은 순서
     @Query(nativeQuery = true, value = """
             select x.category_id as categoryId, x.user_id as heirId
@@ -264,6 +266,7 @@ public interface TodoRepository extends JpaRepository<Todo, Long> {
                        row_number() over (partition by c.id order by bit_count(k.mask), k.mask, m.created_at, m.id) as rn
                 from categories c
                 join team_members m on m.team_id = c.team_id
+                join users u on u.id = m.user_id and u.deleted_at is null and u.status <> 'BANNED'
                 join (select m2.id as member_id,
                              case when t2.owner_id = m2.user_id then 63 else coalesce(bit_or(r2.permissions_mask), 0) end as mask
                       from team_members m2

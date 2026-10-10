@@ -22,8 +22,10 @@ import lombok.RequiredArgsConstructor;
 import com.backend.orbitflow.domain.user.dto.response.UserResponse;
 import com.backend.orbitflow.domain.user.service.UserService;
 import com.backend.orbitflow.global.security.AuthUser;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
@@ -44,6 +46,7 @@ public class UserFacade {
     private final S3TransactionalFileManager s3FileManager;
     private final OAuthService oAuthService;
     private final TeamService teamService;
+    private final PlatformTransactionManager transactionManager;
 
     // 기본 아바타·초기 포인트는 가입 트랜잭션에서 함께 생성 (UserRegisteredEvent)
     public UserResponse signup(UserSignupRequest request) {
@@ -61,13 +64,21 @@ public class UserFacade {
         ));
     }
 
-    // 업로드 실패·롤백 시 새 파일 삭제, 커밋 후 이전 파일 삭제 (소셜 프로필 등 외부 URL은 삭제하지 않음)
-    @Transactional
+    // S3 업로드(외부 HTTP)는 DB 커넥션을 잡지 않도록 트랜잭션 밖에서 수행하고, 이미지 URL 교체만 짧은 트랜잭션으로 처리
+    // 교체 실패·롤백 시 새 파일 삭제, 커밋 후 이전 파일 삭제 (소셜 프로필 등 외부 URL은 삭제하지 않음)
     public UserResponse updateProfileImage(AuthUser authUser, MultipartFile image) {
-        String imageUrl = s3FileManager.upload(PROFILE_IMAGE_DIR, image);
-        String oldImage = userService.updateProfileImage(authUser.getUuid(), imageUrl);
-        deleteManagedImage(oldImage);
-        return UserResponse.from(userService.getByUuid(authUser.getUuid()));
+        String imageUrl = s3Service.uploadFile(PROFILE_IMAGE_DIR, image);
+        try {
+            return new TransactionTemplate(transactionManager).execute(status -> {
+                String oldImage = userService.updateProfileImage(authUser.getUuid(), imageUrl);
+                deleteManagedImage(oldImage);
+                return UserResponse.from(userService.getByUuid(authUser.getUuid()));
+            });
+        } catch (RuntimeException e) {
+            // 트랜잭션 밖에서 호출되므로 즉시 삭제됨
+            s3FileManager.deleteAfterCommit(List.of(imageUrl));
+            throw e;
+        }
     }
 
     // 기본 이미지로 초기화

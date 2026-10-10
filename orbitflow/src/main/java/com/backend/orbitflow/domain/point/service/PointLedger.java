@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.sql.Connection;
+import java.time.LocalDateTime;
 
 /**
  * 포인트 원장 : 포인트 잔액(avatars.point) 변경의 유일한 진입점
@@ -66,6 +67,12 @@ public class PointLedger {
         );
         entityManager.refresh(avatar, LockModeType.PESSIMISTIC_WRITE);
         return avatar;
+    }
+
+    // from 이후 꾸밈 요소 구매(USE)로 포인트를 사용했는지 : 동시에 진행되는 구매를 놓치지 않도록 lock() 이후에 호출
+    public boolean hasUsedSince(User user, LocalDateTime from) {
+        requireReadCommitted();
+        return pointTransactionRepository.existsByUserAndTypeAndCreatedAtGreaterThanEqual(user, PointTransactionType.USE, from);
     }
 
     // 잔액이 부족하면 거부 (구매·환불 등)

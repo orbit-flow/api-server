@@ -23,8 +23,14 @@ public record NotificationRequest(
         User actor,
         Long targetId,
         String targetUuid,
-        String content
+        String content,
+        // true면 같은 (유형, 행위자, 대상) 알림을 이미 보냈어도 다시 발송 (토글성 활동 중복 제거에서 제외)
+        boolean repeatable
 ) {
+
+    public NotificationRequest(Map<Long, String> receivers, NotificationType type, User actor, Long targetId, String targetUuid, String content) {
+        this(receivers, type, actor, targetId, targetUuid, content, false);
+    }
 
     public static NotificationRequest to(User receiver, NotificationType type, User actor, Long targetId, String targetUuid, String content) {
         return toAll(List.of(receiver), type, actor, targetId, targetUuid, content);
@@ -36,5 +42,10 @@ public record NotificationRequest(
                 .filter(receiver -> receiver.getDeletedAt() == null && receiver.getStatus() != UserStatus.BANNED)
                 .forEach(receiver -> receiverUuids.put(receiver.getId(), receiver.getUuid()));
         return new NotificationRequest(receiverUuids, type, actor, targetId, targetUuid, content);
+    }
+
+    // 토글이 아닌 일회성 결과(팔로우 요청 수락 등) : 같은 유형의 이전 알림과 무관하게 발송
+    public NotificationRequest asRepeatable() {
+        return new NotificationRequest(receivers, type, actor, targetId, targetUuid, content, true);
     }
 }

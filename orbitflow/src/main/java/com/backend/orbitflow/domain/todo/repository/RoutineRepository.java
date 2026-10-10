@@ -24,16 +24,15 @@ public interface RoutineRepository extends JpaRepository<Routine, Long> {
             """)
     Optional<Routine> findWithTodoById(@Param("id") Long id);
 
-    // 원본 투두가 삭제되지 않았고 반복이 끝나지 않은 규칙 id (일일 회차 생성 배치를 묶음 단위로 나누기 위해 id만)
-    // 소유자가 탈퇴했거나 팀이 삭제된 카테고리의 규칙은 제외
+    // 반복이 끝나지 않은 규칙 id (일일 회차 생성 배치를 묶음 단위로 나누기 위해 id만)
+    // 원본 투두 삭제는 그 회차만 삭제한 것이므로 규칙은 유지, 소유자가 탈퇴했거나 팀이 삭제된 카테고리의 규칙은 제외
     @Query("""
             select r.id from Routine r
             join r.todo t
             join t.category c
             left join c.team ct
             left join c.user cu
-            where t.deletedAt is null
-              and (r.repeatEndDate is null or r.repeatEndDate >= :from)
+            where (r.repeatEndDate is null or r.repeatEndDate >= :from)
               and (ct is null or ct.deletedAt is null)
               and (cu is null or cu.deletedAt is null)
             order by r.id
@@ -56,7 +55,6 @@ public interface RoutineRepository extends JpaRepository<Routine, Long> {
             join fetch r.todo t
             join fetch t.category c
             where c.user = :user
-              and t.deletedAt is null
               and (r.repeatEndDate is null or r.repeatEndDate >= :from)
             """)
     List<Routine> findAllActiveByUser(@Param("user") User user, @Param("from") LocalDateTime from);

@@ -30,6 +30,7 @@ import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import com.backend.orbitflow.global.util.JdbcBulkInserter;
 import com.backend.orbitflow.domain.todo.reminder.TodoReminderQueue;
 
@@ -79,9 +80,8 @@ public class RoutineServiceImpl implements RoutineService {
         if (scope == null) {
             throw new CommonException(TodoErrorCode.ROUTINE_SCOPE_REQUIRED);
         }
-        // 회차에서 호출될 수 있으므로 원본 투두(카테고리·담당자)와 함께 다시 조회
+        // 회차에서 호출될 수 있으므로 원본 투두(카테고리·담당자)와 함께 다시 조회 (원본이 삭제되어도 반복 규칙은 유지)
         routine = routineRepository.findWithTodoById(routine.getId())
-                .filter(r -> !r.getTodo().isDeleted())
                 .orElseThrow(() -> new CommonException(TodoErrorCode.ROUTINE_NOT_FOUND));
         // 원본이 오늘 이후에 시작하면 지나간 회차가 없으므로 전체 적용과 같음
         if (scope == RoutineScope.FROM_TODAY && routine.getTodo().getStartDate().isBefore(today)) {
@@ -126,10 +126,14 @@ public class RoutineServiceImpl implements RoutineService {
         Todo origin = routine.getTodo();
         List<TodoRepository.OccurrenceRow> rows = todoRepository.findOccurrenceRows(routine, origin.getId(), today);
 
-        Todo anchor = null;
+        // 새 반복의 기준은 시각을 옮기지 않은 첫 회차 (옮긴 회차를 기준으로 삼으면 새 규칙 전체가 옮긴 시각으로 밀림)
+        TodoRepository.OccurrenceRow first = rows.stream()
+                .filter(row -> row.getStartDate().equals(row.getSlot()))
+                .findFirst()
+                .orElse(null);
         LocalDateTime anchorStart;
-        if (!rows.isEmpty()) {
-            anchorStart = rows.get(0).getStartDate();
+        if (first != null) {
+            anchorStart = first.getStartDate();
         } else {
             anchorStart = nextOccurrence(routine, today);
             if (anchorStart == null) {
@@ -139,12 +143,10 @@ public class RoutineServiceImpl implements RoutineService {
         if (repeatEndDate != null && repeatEndDate.isBefore(anchorStart)) {
             throw new CommonException(TodoErrorCode.INVALID_TODO_PERIOD);
         }
-        if (anchor == null) {
-            anchor = rows.isEmpty()
-                    ? todoRepository.save(Todo.occurrence(origin, routine, anchorStart))
-                    : todoRepository.findWithAllById(rows.get(0).getId())
-                            .orElseThrow(() -> new CommonException(TodoErrorCode.TODO_NOT_FOUND));
-        }
+        Todo anchor = first == null
+                ? todoRepository.save(Todo.occurrence(origin, routine, anchorStart))
+                : todoRepository.findWithAllById(first.getId())
+                        .orElseThrow(() -> new CommonException(TodoErrorCode.TODO_NOT_FOUND));
 
         // 기존 반복은 오늘 직전에 끝남 (이미 더 일찍 끝났다면 유지)
         LocalDateTime oldEnd = today.minusSeconds(1);
@@ -209,11 +211,10 @@ public class RoutineServiceImpl implements RoutineService {
     // 미리보기 회차에 작업을 요청하면 해당 회차를 즉시 생성
     public TodoResponse createOccurrence(User actor, Long routineId, LocalDateTime startDate) {
         Routine routine = routineRepository.findWithTodoById(routineId)
-                .filter(r -> !r.getTodo().isDeleted())
                 .orElseThrow(() -> new CommonException(TodoErrorCode.ROUTINE_NOT_FOUND));
         todoAuthorityService.checkEdit(routine.getTodo().getCategory(), actor);
-        // 생성 기준(1개월 뒤)을 넘는 회차를 임의로 만들어 낼 수 없음
-        if (!routine.isOccurrence(startDate) || startDate.isAfter(horizon())) {
+        // 생성 기준(1개월 뒤)을 넘거나 지나간(오늘 이전) 회차를 임의로 만들어 낼 수 없음
+        if (!routine.isOccurrence(startDate) || startDate.isAfter(horizon()) || startDate.isBefore(startOfToday())) {
             throw new CommonException(TodoErrorCode.NOT_ROUTINE_OCCURRENCE);
         }
         if (todoRepository.existsByRoutineAndSlot(routine, startDate)) {
@@ -223,8 +224,13 @@ public class RoutineServiceImpl implements RoutineService {
     }
 
     // [from, to) 구간의 아직 생성되지 않은 회차 (반복 규칙 수와 무관하게 쿼리 2회 : 규칙, 생성된 회차 슬롯)
+    // 과거 회차는 생성하지 않으므로 오늘 이전 구간은 미리보기에서도 제외
     @Transactional(readOnly = true)
     public List<DashboardTodoResponse> getPreviews(User user, LocalDateTime from, LocalDateTime to) {
+        from = laterOf(from, startOfToday());
+        if (!from.isBefore(to)) {
+            return List.of();
+        }
         LocalDateTime end = to.minusNanos(1);
         Map<Routine, List<LocalDateTime>> occurrencesByRoutine = new LinkedHashMap<>();
         for (Routine routine : routineRepository.findAllActiveByUser(user, from)) {
@@ -308,7 +314,7 @@ public class RoutineServiceImpl implements RoutineService {
     private Map<Long, Set<LocalDateTime>> existingSlots(Collection<Routine> routines, LocalDateTime from, LocalDateTime to) {
         return todoRepository.findSlotsByRoutineIn(routines, from, to).stream()
                 .collect(Collectors.groupingBy(RoutineSlot::routineId,
-                        Collectors.mapping(RoutineSlot::slot, Collectors.toSet())));
+                        Collectors.flatMapping(slot -> Stream.of(slot.slot(), slot.startDate()), Collectors.toSet())));
     }
 
     // 기존 규칙에서 from 이후 아직 생성되지 않은(삭제된 회차 제외) 첫 회차 시각, 없으면 null

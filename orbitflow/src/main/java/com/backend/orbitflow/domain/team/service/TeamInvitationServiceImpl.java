@@ -30,6 +30,7 @@ public class TeamInvitationServiceImpl implements TeamInvitationService {
     private final TeamMemberRepository teamMemberRepository;
     private final TeamAuthorityService teamAuthorityService;
     private final TeamMemberService teamMemberService;
+    private final TeamService teamService;
 
     public TeamInvitationResponse invite(Team team, User inviter, User invitee) {
         teamAuthorityService.checkPermission(team, inviter, TeamPermission.MANAGE_MEMBERS);
@@ -83,10 +84,8 @@ public class TeamInvitationServiceImpl implements TeamInvitationService {
         TeamInvitation invitation = getMyInvitation(me, invitationUuid);
         validatePending(invitation);
         validateNotExpired(invitation);
-        if (invitation.getTeam().getDeletedAt() != null) {
-            throw new CommonException(TeamErrorCode.TEAM_NOT_FOUND);
-        }
-        teamMemberService.joinTeam(invitation.getTeam(), me);
+        // 팀 행을 잠가 동시에 진행되는 팀 삭제와 직렬화 (삭제된 팀에 구성원이 남지 않도록)
+        teamMemberService.joinTeam(teamService.lockActiveTeam(invitation.getTeam()), me);
         invitation.accept();
         return TeamInvitationResponse.from(invitation);
     }

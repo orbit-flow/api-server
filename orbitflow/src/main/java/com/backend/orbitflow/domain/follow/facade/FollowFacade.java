@@ -76,8 +76,9 @@ public class FollowFacade {
         User me = userService.getByUuid(authUser.getUuid());
         Follow follow = followService.acceptFollow(me, followId);
         // 비밀계정 팔로우 요청이 승인되면 요청자에게 (거절은 고지하지 않음)
+        // 상대가 먼저 나를 팔로우해 같은 (SOCIAL, 행위자) 알림이 이미 있어도 수락 알림은 발송
         eventPublisher.publishEvent(NotificationRequest.to(follow.getFollower(), NotificationType.SOCIAL, me, follow.getId(), null,
-                me.getName() + "님이 팔로우 요청을 수락했습니다."));
+                me.getName() + "님이 팔로우 요청을 수락했습니다.").asRepeatable());
         return FollowResponse.of(follow.getId(), follow.getFollower().getUuid(), follow.getState());
     }
 

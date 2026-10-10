@@ -16,6 +16,7 @@ import com.backend.orbitflow.global.security.AuthUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.backend.orbitflow.global.common.dto.response.PageResponse;
@@ -50,7 +51,7 @@ public class TeamMemberFacade {
         return PageResponse.from(teamMemberService.getMemberRoles(
                 teamService.getActiveTeam(teamUuid),
                 userService.getByUuid(authUser.getUuid()),
-                userService.getByUuid(userUuid),
+                userService.getByUuidIncludingBanned(userUuid),
                 page, size
         ));
     }
@@ -74,9 +75,9 @@ public class TeamMemberFacade {
     }
 
     // 탈퇴한 본인과 팀 관리자, 담당 투두를 상속받은 구성원에게 알림
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public void leaveTeam(AuthUser authUser, String teamUuid) {
-        Team team = teamService.getActiveTeam(teamUuid);
+        Team team = teamService.lockActiveTeam(teamService.getActiveTeam(teamUuid));
         User me = userService.getByUuid(authUser.getUuid());
         Map<Long, Integer> inherited = teamMemberService.leaveTeam(team, me);
         notifyInherited(team, me, inherited);
@@ -86,10 +87,11 @@ public class TeamMemberFacade {
     }
 
     // 내보내진 구성원과 팀 관리자, 담당 투두를 상속받은 구성원에게 알림
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public void kickMember(AuthUser authUser, String teamUuid, String userUuid) {
-        Team team = teamService.getActiveTeam(teamUuid);
-        User target = userService.getByUuid(userUuid);
+        Team team = teamService.lockActiveTeam(teamService.getActiveTeam(teamUuid));
+        // 정지된 구성원도 관리할 수 있도록 정지 사용자 포함 조회
+        User target = userService.getByUuidIncludingBanned(userUuid);
         Map<Long, Integer> inherited = teamMemberService.kickMember(team, userService.getByUuid(authUser.getUuid()), target);
         notifyInherited(team, target, inherited);
         notifyMemberAndAdmins(team, target, NotificationType.TEAM_LEFT,
@@ -101,7 +103,7 @@ public class TeamMemberFacade {
     @Transactional
     public TeamMemberResponse updateMemberRoles(AuthUser authUser, String teamUuid, String userUuid, TeamMemberRoleRequest request) {
         Team team = teamService.getActiveTeam(teamUuid);
-        User target = userService.getByUuid(userUuid);
+        User target = userService.getByUuidIncludingBanned(userUuid);
         Set<Long> before = teamAuthorityService.findRoleIds(team, target);
         TeamMemberResponse response = teamMemberService.updateMemberRoles(
                 team, userService.getByUuid(authUser.getUuid()), target, request.roleIds());
@@ -113,10 +115,10 @@ public class TeamMemberFacade {
         return response;
     }
 
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public void transferOwner(AuthUser authUser, String teamUuid, TeamUserRequest request) {
         teamMemberService.transferOwner(
-                teamService.getActiveTeam(teamUuid),
+                teamService.lockActiveTeam(teamService.getActiveTeam(teamUuid)),
                 userService.getByUuid(authUser.getUuid()),
                 userService.getByUuid(request.userUuid())
         );

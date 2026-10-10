@@ -25,6 +25,7 @@ public interface UserReportRepository extends JpaRepository<UserReport, Long> {
     long countByReporterAndCreatedAtGreaterThanEqual(User reporter, LocalDateTime from);
 
     // 내 신고 목록 : 신고 대상(게시글·댓글·사용자)과 작성자까지 한 번에 조회해 목록 응답으로 바로 반환 (N+1 방지)
+    // 대상 요약은 신고 당시 스냅샷 : 이후 비공개 전환·차단된 대상의 현재 원문을 신고자에게 노출하지 않음
     @Query(value = """
             select new com.backend.orbitflow.domain.report.dto.response.ReportListResponse(
                 r.id,
@@ -35,11 +36,7 @@ public interface UserReportRepository extends JpaRepository<UserReport, Long> {
                     when com.backend.orbitflow.domain.report.enums.ReportContentType.COMMENT then cu.uuid
                     when com.backend.orbitflow.domain.report.enums.ReportContentType.USER then tu.uuid
                 end,
-                case r.contentType
-                    when com.backend.orbitflow.domain.report.enums.ReportContentType.POST then p.content
-                    when com.backend.orbitflow.domain.report.enums.ReportContentType.COMMENT then c.content
-                    when com.backend.orbitflow.domain.report.enums.ReportContentType.USER then tu.name
-                end,
+                r.targetSnapshot,
                 case
                     when p.id is not null or c.id is not null then true
                     when tu.id is not null and tu.deletedAt is null then true
@@ -63,6 +60,7 @@ public interface UserReportRepository extends JpaRepository<UserReport, Long> {
     Optional<UserReport> findWithReporterById(@Param("id") Long id);
 
     // 관리자 목록 : 상태·유형 필터 (null이면 전체), 목록 응답으로 바로 반환
+    // 원문은 요약 길이(50자) + 말줄임 판정용 1자만 읽음 (TEXT 전체를 전송하지 않도록)
     @Query(value = """
             select new com.backend.orbitflow.domain.report.dto.response.ReportListResponse(
                 r.id,
@@ -74,8 +72,8 @@ public interface UserReportRepository extends JpaRepository<UserReport, Long> {
                     when com.backend.orbitflow.domain.report.enums.ReportContentType.USER then tu.uuid
                 end,
                 case r.contentType
-                    when com.backend.orbitflow.domain.report.enums.ReportContentType.POST then p.content
-                    when com.backend.orbitflow.domain.report.enums.ReportContentType.COMMENT then c.content
+                    when com.backend.orbitflow.domain.report.enums.ReportContentType.POST then substring(p.content, 1, 51)
+                    when com.backend.orbitflow.domain.report.enums.ReportContentType.COMMENT then substring(c.content, 1, 51)
                     when com.backend.orbitflow.domain.report.enums.ReportContentType.USER then tu.name
                 end,
                 case

@@ -50,7 +50,9 @@ public class OAuthFacade extends DefaultOAuth2UserService {
             case "naver" -> new NaverUserInfo(oauth2User.getAttribute("response"));
             case "kakao" -> new KakaoUserInfo(oauth2User.getAttributes(), oauth2User.getAttribute("kakao_account"));
             case "github" -> new GithubUserInfo(oauth2User.getAttributes());
-            default -> throw new CommonException(AuthErrorCode.UNSUPPORTED_OAUTH_PROVIDER);
+            // OAuth2 필터는 AuthenticationException만 실패 핸들러로 넘기므로 FE 로그인 화면으로 돌려보내도록 변환
+            default -> throw new OAuth2AuthenticationException(new OAuth2Error("unsupported_provider"),
+                    AuthErrorCode.UNSUPPORTED_OAUTH_PROVIDER.getMessage());
         };
         // 회원 조회·가입·연결과 상태 확인만 하나의 트랜잭션으로 (예외 시 롤백 후 그대로 전파)
         return new TransactionTemplate(transactionManager).execute(status -> loadOrRegister(oAuth2UserInfo));
@@ -58,9 +60,15 @@ public class OAuthFacade extends DefaultOAuth2UserService {
 
     private OAuth2User loadOrRegister(OAuth2UserInfo oAuth2UserInfo) {
         Optional<User> user = oAuthService.findUser(oAuth2UserInfo.getProvider(), oAuth2UserInfo.getProviderId());
-        User oAuthUser = user.orElseGet( () ->
-                userService.registerSocialUser(oAuth2UserInfo.getEmail(), oAuth2UserInfo.getName(), oAuth2UserInfo.getProfileUrl())
-        );
+        User oAuthUser;
+        try {
+            oAuthUser = user.orElseGet(() ->
+                    userService.registerSocialUser(oAuth2UserInfo.getEmail(), oAuth2UserInfo.getName(), oAuth2UserInfo.getProfileUrl())
+            );
+        } catch (CommonException e) {
+            // 같은 이메일로 가입된 계정이 있으면 500 대신 FE 로그인 화면으로 (OAuth2 실패 핸들러로 전달)
+            throw new OAuth2AuthenticationException(new OAuth2Error("email_already_registered"), e.getMessage());
+        }
 
         // 소셜 가입 시 기본 아바타·초기 포인트는 가입 트랜잭션에서 함께 생성 (UserRegisteredEvent)
         if (user.isEmpty()) oAuthService.link(oAuthUser, oAuth2UserInfo.getProvider(), oAuth2UserInfo.getProviderId());

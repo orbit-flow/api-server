@@ -20,6 +20,8 @@ import java.util.List;
  * 잘라낸 항목에만 작성자·투두·카테고리·대표 사진·좋아요·댓글 수를 붙여 평면 행으로 반환
  * <ul>
  *   <li>요청당 쿼리 2회 (목록 + 전체 개수), 페이지 크기와 무관</li>
+ *   <li>합친 결과의 상위 (offset + limit)건은 각 출처의 상위 (offset + limit)건 안에 있으므로, 출처마다 먼저 정렬·제한한 뒤 합침
+ *   (팔로우 대상의 전체 이력을 합쳐 정렬하지 않도록)</li>
  *   <li>열람 권한(카테고리 공개 범위)도 조회 사용자 id로 SQL에서 판정하므로 페이지 크기가 항상 정확함</li>
  *   <li>개인 카테고리 : 작성자 = 카테고리 소유자 = 수락된 팔로우 대상이고 차단 시 팔로우가 삭제되므로 PRIVATE만 제외</li>
  *   <li>팀 카테고리 : CategoryRepository.TEAM_CATEGORY_VIEWABLE</li>
@@ -60,7 +62,8 @@ public interface TimelineRepository extends Repository<Post, Long> {
             """ + CategoryRepository.TEAM_CATEGORY_VIEWABLE + "))";
 
     default Page<TimelineResponse> findTimeline(Long viewerId, Pageable pageable) {
-        List<TimelineResponse> content = findTimelineRows(viewerId, pageable.getPageSize(), pageable.getOffset()).stream()
+        List<TimelineResponse> content = findTimelineRows(viewerId, pageable.getPageSize(), pageable.getOffset(),
+                        pageable.getOffset() + pageable.getPageSize()).stream()
                 .map(TimelineResponse::from)
                 .toList();
         return PageableExecutionUtils.getPage(content, pageable, () -> countTimeline(viewerId));
@@ -95,7 +98,12 @@ public interface TimelineRepository extends Repository<Post, Long> {
                       and not exists (select 1 from blocks cb
                                       where (cb.blocker_id = :viewerId and cb.blockee_id = cmu.id) or (cb.blocker_id = cmu.id and cb.blockee_id = :viewerId))) as commentCount,
                    exists(select 1 from likes l where l.post_id = p.id and l.user_id = :viewerId) as liked
-            from ((""" + POST_ITEMS + ") union all (" + TODO_ITEMS + """
+            from ((""" + POST_ITEMS + """
+                    order by p0.created_at desc, p0.id desc
+                    limit :branchLimit
+                ) union all (""" + TODO_ITEMS + """
+                    order by t1.completed_at desc, t1.id desc
+                    limit :branchLimit
                 ) order by occurred_at desc, kind asc, item_id desc
                 limit :limit offset :offset
             ) x
@@ -105,7 +113,8 @@ public interface TimelineRepository extends Repository<Post, Long> {
             left join posts p on x.kind = 'POST' and p.id = x.item_id
             order by x.occurred_at desc, x.kind asc, x.item_id desc
             """)
-    List<TimelineRow> findTimelineRows(@Param("viewerId") Long viewerId, @Param("limit") int limit, @Param("offset") long offset);
+    List<TimelineRow> findTimelineRows(@Param("viewerId") Long viewerId, @Param("limit") int limit, @Param("offset") long offset,
+                                       @Param("branchLimit") long branchLimit);
 
     @Query(nativeQuery = true, value = "select count(*) from ((" + POST_ITEMS + ") union all (" + TODO_ITEMS + ")) z")
     long countTimeline(@Param("viewerId") Long viewerId);

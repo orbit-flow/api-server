@@ -39,8 +39,6 @@ public class AuthController {
 
     private final AuthFacade authFacade;
 
-    // access token은 Authorization 헤더(토큰 재발급과 동일), refresh token은 HttpOnly 쿠키로 전달
-    // 정지 계정은 토큰 없이 data.suspended = true와 정지 안내 정보만 반환
     @PostMapping("/login")
     public ResponseEntity<CommonResponse<LoginResponse>> login(
             @Valid @RequestBody LoginRequest request
@@ -64,6 +62,22 @@ public class AuthController {
                 ));
     }
 
+    @PostMapping("/logout")
+    public ResponseEntity<CommonResponse<Void>> logout(
+            @AuthenticationPrincipal AuthUser authUser,
+            @RequestHeader(AUTHORIZATION_HEADER) String accessToken
+    ) {
+        if (authUser == null || !accessToken.startsWith(BEARER_PREFIX)) {
+            throw new CommonException(GlobalErrorCode.UNAUTHORIZED);
+        }
+        authFacade.logout(authUser, accessToken.substring(BEARER_PREFIX.length()));
+        return ResponseEntity
+                .status(HttpStatus.OK)
+                .body(CommonResponse.success(
+                        AuthSuccessCode.LOGOUT_SUCCESS
+                ));
+    }
+
     // 소셜 로그인 정지 안내 : FE /suspended?ticket=... 화면에서 정지 사유·기간 조회 (10분간 유효)
     @GetMapping("/suspension-notice")
     public ResponseEntity<CommonResponse<SuspendedAccountResponse>> getSuspensionNotice(
@@ -77,22 +91,7 @@ public class AuthController {
                 ));
     }
 
-    @PostMapping("/logout")
-    public ResponseEntity<CommonResponse<Void>> logout(
-            @AuthenticationPrincipal AuthUser authUser,
-            @RequestHeader(AUTHORIZATION_HEADER) String accessToken
-    ) {
-        // 블랙리스트 키는 필터가 조회하는 순수 토큰이므로 Bearer 접두어 제거
-        if (authUser == null || !accessToken.startsWith(BEARER_PREFIX)) {
-            throw new CommonException(GlobalErrorCode.UNAUTHORIZED);
-        }
-        authFacade.logout(authUser, accessToken.substring(BEARER_PREFIX.length()));
-        return ResponseEntity
-                .status(HttpStatus.OK)
-                .body(CommonResponse.success(
-                        AuthSuccessCode.LOGOUT_SUCCESS
-                ));
-    }
+
 
     @PostMapping("/token-reissue")
     public ResponseEntity<CommonResponse<Void>> reissue (

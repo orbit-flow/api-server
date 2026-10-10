@@ -127,6 +127,10 @@ public class TodoServiceImpl implements TodoService {
         Todo todo = getActiveTodo(todoId);
         todoAuthorityService.checkEdit(todo.getCategory(), actor);
         validatePeriod(startDate, endDate);
+        // 반복 원본의 시작 시각은 회차 계산의 기준 : 바꾸면 이후 회차가 원래 시각과 새 시각에 중복 생성됨
+        if (todo.isRoutineOrigin() && !todo.getStartDate().equals(startDate)) {
+            throw new CommonException(TodoErrorCode.ROUTINE_ORIGIN_START_FIXED);
+        }
         todo.updateTodo(type, name, startDate, endDate, remindBeforeMinutes);
         return TodoResponse.from(todo);
     }

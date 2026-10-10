@@ -40,21 +40,26 @@ public class TodoReminderService {
     private final PlatformTransactionManager transactionManager;
 
     // 꺼낸 항목의 처리 트랜잭션이 실패해도 재예약할 수 있도록 메서드 자체는 트랜잭션 없이 실행
+    // 한 번에 꺼내는 수에 상한이 있으므로 같은 분에 몰린 리마인드는 목록이 빌 때까지 반복해서 처리
     @Transactional(propagation = Propagation.NOT_SUPPORTED)
     public void sendDueReminders(LocalDateTime now) {
-        List<Long> todoIds = todoReminderQueue.claimDue(now);
-        if (todoIds.isEmpty()) {
-            return;
-        }
-        try {
-            Integer sent = new TransactionTemplate(transactionManager).execute(status -> send(todoIds, now));
-            if (sent != null && sent > 0) {
-                log.info("투두 리마인드 발송 완료: {}건", sent);
+        while (true) {
+            List<Long> todoIds = todoReminderQueue.claimDue(now);
+            if (todoIds.isEmpty()) {
+                return;
             }
-        } catch (RuntimeException e) {
-            // 이미 목록에서 꺼낸 항목이 유실되지 않도록 다시 예약 : 다음 분에 재시도하며, 10분이 지나면 발송 직전 확인에서 버려짐
-            log.error("투두 리마인드 발송 실패 : {}건 재예약", todoIds.size(), e);
-            todoReminderQueue.requeue(todoIds, now);
+            try {
+                Integer sent = new TransactionTemplate(transactionManager).execute(status -> send(todoIds, now));
+                if (sent != null && sent > 0) {
+                    log.info("투두 리마인드 발송 완료: {}건", sent);
+                }
+            } catch (RuntimeException e) {
+                // 이미 목록에서 꺼낸 항목이 유실되지 않도록 다시 예약 : 다음 분에 재시도하며, 10분이 지나면 발송 직전 확인에서 버려짐
+                // 재예약한 항목을 이번 실행에서 다시 꺼내지 않도록 반복 종료
+                log.error("투두 리마인드 발송 실패 : {}건 재예약", todoIds.size(), e);
+                todoReminderQueue.requeue(todoIds, now);
+                return;
+            }
         }
     }
 

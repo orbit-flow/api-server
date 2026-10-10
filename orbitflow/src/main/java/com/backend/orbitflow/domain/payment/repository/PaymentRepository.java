@@ -11,6 +11,7 @@ import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
 import java.util.Optional;
 
 public interface PaymentRepository extends JpaRepository<Payment, Long> {
@@ -21,8 +22,8 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     @Query("select p from Payment p where p.orderId = :orderId and p.user = :user")
     Optional<Payment> findByOrderIdAndUserForUpdate(@Param("orderId") String orderId, @Param("user") User user);
 
-    // 사용자의 상태별 주문 수 (승인 대기 주문 수 제한용)
-    long countByUserAndStatus(User user, PaymentStatus status);
+    // 사용자의 상태별 주문 중 since 이후 생성된 수 (승인 대기 주문 수 제한용)
+    long countByUserAndStatusAndCreatedAtAfter(User user, PaymentStatus status, LocalDateTime since);
 
     Page<Payment> findAllByUserOrderByCreatedAtDescIdDesc(User user, Pageable pageable);
 }

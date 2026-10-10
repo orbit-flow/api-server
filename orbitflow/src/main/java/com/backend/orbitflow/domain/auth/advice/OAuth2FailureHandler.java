@@ -11,9 +11,6 @@ import org.springframework.web.util.UriComponentsBuilder;
 
 import java.io.IOException;
 
-// 소셜 로그인 실패 시 서버의 기본 로그인 페이지 대신 FE 화면으로 이동
-// 정지 계정 : /suspended?ticket=... (GET /api/auth/suspension-notice?ticket=... 으로 정지 사유·기간 조회)
-// 그 외 : /login?error=... (account_withdrawn · account_dormant 또는 OAuth 제공자의 오류 코드, 그 외 login_failed)
 @Component
 public class OAuth2FailureHandler implements AuthenticationFailureHandler {
 

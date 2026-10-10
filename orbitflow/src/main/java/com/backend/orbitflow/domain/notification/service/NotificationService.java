@@ -15,7 +15,7 @@ public interface NotificationService {
     int RETENTION_DAYS = 30;
 
     // receiverUuids : 수신자 id → uuid (탈퇴·정지 사용자는 호출 측에서 제외, NotificationRequest 참고)
-    void sendAll(Map<Long, String> receiverUuids, NotificationType type, User actor, Long targetId, String targetUuid, String content);
+    void sendAll(Map<Long, String> receiverUuids, NotificationType type, User actor, Long targetId, String targetUuid, String content, boolean repeatable);
     void sendEach(List<NotificationDraft> drafts);
     SseEmitter subscribe(User user);
     Page<NotificationResponse> getNotifications(User user, boolean unreadOnly, int page, int size);

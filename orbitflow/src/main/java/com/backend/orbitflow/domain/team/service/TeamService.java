@@ -11,6 +11,7 @@ public interface TeamService {
     int RETENTION_DAYS = 30;
 
     Team getActiveTeam(String uuid);
+    Team lockActiveTeam(Team team);
     Team createTeam(User owner, String name, String icon);
     Page<TeamResponse> getMyTeams(User user, int page, int size);
     TeamResponse getMyTeam(User user, String uuid);
