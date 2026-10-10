@@ -1,6 +1,7 @@
 package com.backend.orbitflow.domain.payment.service;
 
-import com.backend.orbitflow.domain.notification.event.PointEarnedEvent;
+import com.backend.orbitflow.domain.notification.enums.NotificationType;
+import com.backend.orbitflow.domain.notification.event.NotificationRequest;
 import com.backend.orbitflow.domain.payment.dto.response.PaymentResponse;
 import com.backend.orbitflow.domain.payment.entity.Payment;
 import com.backend.orbitflow.domain.payment.enums.PaymentStatus;
@@ -13,6 +14,7 @@ import com.backend.orbitflow.domain.point.entity.PointTransaction;
 import com.backend.orbitflow.domain.point.enums.PointTransactionType;
 import com.backend.orbitflow.domain.point.service.PointLedger;
 import com.backend.orbitflow.domain.user.entity.User;
+import com.backend.orbitflow.domain.user.service.UserService;
 import com.backend.orbitflow.global.common.error.ErrorCode;
 import com.backend.orbitflow.global.common.error.exception.CommonException;
 import lombok.extern.slf4j.Slf4j;
@@ -22,6 +24,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
@@ -46,8 +49,11 @@ import java.util.UUID;
 @Service
 public class PaymentServiceImpl implements PaymentService {
 
+    private static final int MAX_READY_PAYMENTS = 5;
+
     private final PaymentRepository paymentRepository;
     private final PointLedger pointLedger;
+    private final UserService userService;
     private final PaymentGateway paymentGateway;
     private final TransactionTemplate transactionTemplate;
     private final ApplicationEventPublisher eventPublisher;
@@ -55,12 +61,14 @@ public class PaymentServiceImpl implements PaymentService {
     public PaymentServiceImpl(
             PaymentRepository paymentRepository,
             PointLedger pointLedger,
+            UserService userService,
             PaymentGateway paymentGateway,
             PlatformTransactionManager transactionManager,
             ApplicationEventPublisher eventPublisher
     ) {
         this.paymentRepository = paymentRepository;
         this.pointLedger = pointLedger;
+        this.userService = userService;
         this.paymentGateway = paymentGateway;
         this.eventPublisher = eventPublisher;
         // 포인트 변경 : READ COMMITTED 필수 (PointLedger 참고)
@@ -68,9 +76,14 @@ public class PaymentServiceImpl implements PaymentService {
         this.transactionTemplate.setIsolationLevel(TransactionDefinition.ISOLATION_READ_COMMITTED);
     }
 
-    // 결제 금액·적립 포인트는 서버가 상품으로 결정
-    @Transactional
+    // 결제 금액·적립 포인트는 서버가 상품으로 결정, 승인 대기(READY) 주문은 사용자당 최대 5건
+    // 사용자 행 락으로 동시 주문 생성을 직렬화 (락 이후 조회가 최신 커밋을 보도록 READ_COMMITTED 필수)
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public PaymentResponse createPayment(User me, PointPackage pointPackage) {
+        userService.lockUser(me.getId());
+        if (paymentRepository.countByUserAndStatus(me, PaymentStatus.READY) >= MAX_READY_PAYMENTS) {
+            throw new CommonException(PaymentErrorCode.TOO_MANY_READY_PAYMENTS);
+        }
         Payment payment = paymentRepository.save(Payment.of(
                 me,
                 UUID.randomUUID().toString(),
@@ -100,6 +113,11 @@ public class PaymentServiceImpl implements PaymentService {
             try {
                 paymentGateway.confirm(paymentKey, orderId, amount);
             } catch (PaymentGatewayException e) {
+                // 일시적 오류는 승인 여부를 알 수 없으므로 주문을 READY로 유지하고 재시도 허용 (롤백)
+                if (e.isRetryable()) {
+                    log.warn("결제 승인 일시 오류 : orderId={}, reason={}", orderId, e.getMessage());
+                    throw new CommonException(PaymentErrorCode.PAYMENT_GATEWAY_UNAVAILABLE);
+                }
                 log.warn("결제 승인 실패 : orderId={}, reason={}", orderId, e.getMessage());
                 payment.fail();
                 return ConfirmResult.failure(PaymentErrorCode.PAYMENT_CONFIRM_FAILED, PaymentResponse.from(payment));
@@ -109,7 +127,9 @@ public class PaymentServiceImpl implements PaymentService {
             cancelOnRollback(paymentKey);
             payment.approve(paymentKey);
             PointTransaction transaction = pointLedger.deposit(me, PointTransactionType.PURCHASE, payment.getPoint());
-            eventPublisher.publishEvent(new PointEarnedEvent(me.getId(), "포인트 충전", payment.getPoint(), transaction.getBalanceAfter()));
+            // 새로 승인된 경우에만 알림 (같은 결제의 승인 재요청은 위에서 반환), 커밋 후 발송
+            eventPublisher.publishEvent(NotificationRequest.to(me, NotificationType.POINT_EARNED, null, null, null,
+                    "포인트 충전 " + payment.getPoint() + "P가 적립되었습니다. (잔액 " + transaction.getBalanceAfter() + "P)"));
             return ConfirmResult.success(PaymentResponse.of(payment, transaction.getBalanceAfter()));
         });
 
@@ -144,14 +164,13 @@ public class PaymentServiceImpl implements PaymentService {
 
     @Transactional(readOnly = true)
     public Page<PaymentResponse> getMyPayments(User me, int page, int size) {
-        return paymentRepository.findAllByUserOrderByCreatedAtDescIdDesc(me, PageRequest.of(Math.max(page - 1, 0), size))
+        return paymentRepository.findAllByUserOrderByCreatedAtDescIdDesc(me, PageRequest.of(Math.max(page - 1, 0), Math.min(Math.max(size, 1), 100)))
                 .map(PaymentResponse::from);
     }
 
-    // 다른 사용자의 주문은 존재 여부를 노출하지 않도록 NOT_FOUND 처리
+    // 다른 사용자의 주문은 존재 여부를 노출하지 않도록 NOT_FOUND 처리 (소유자 조건은 쿼리에서 적용)
     private Payment lockOwnedPayment(User me, String orderId) {
-        return paymentRepository.findByOrderIdForUpdate(orderId)
-                .filter(payment -> payment.isOwnedBy(me))
+        return paymentRepository.findByOrderIdAndUserForUpdate(orderId, me)
                 .orElseThrow(() -> new CommonException(PaymentErrorCode.PAYMENT_NOT_FOUND));
     }
 

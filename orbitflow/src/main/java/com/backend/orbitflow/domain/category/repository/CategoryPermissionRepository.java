@@ -9,21 +9,26 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import java.util.List;
 import java.util.Set;
-import com.backend.orbitflow.domain.category.dto.CategoryGrant;
-import com.backend.orbitflow.domain.user.entity.User;
+import com.backend.orbitflow.domain.category.dto.response.CategoryPermissionResponse;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 public interface CategoryPermissionRepository extends JpaRepository<CategoryPermission, Long> {
 
-    @Query("""
-            select cp from CategoryPermission cp
-            left join fetch cp.role
-            left join fetch cp.member m
-            left join fetch m.user
+    // 열람 허용 대상 페이지 (역할 → 팀원 순, 응답 항목으로 바로 조회)
+    @Query(value = """
+            select new com.backend.orbitflow.domain.category.dto.response.CategoryPermissionResponse(
+                r.id, r.name, r.color, u.uuid, u.name, m.nickname)
+            from CategoryPermission cp
+            left join cp.role r
+            left join cp.member m
+            left join m.user u
             where cp.category = :category
-            """)
-    List<CategoryPermission> findAllWithTargetByCategory(@Param("category") Category category);
+            order by case when r.id is null then 1 else 0 end, cp.id asc
+            """,
+            countQuery = "select count(cp) from CategoryPermission cp where cp.category = :category")
+    Page<CategoryPermissionResponse> findPageByCategory(@Param("category") Category category, Pageable pageable);
 
     // member가 직접 또는 보유 역할로 열람 허용된 팀 카테고리 id 목록
     @Query("""
@@ -34,28 +39,6 @@ public interface CategoryPermissionRepository extends JpaRepository<CategoryPerm
             """)
     Set<Long> findAllowedCategoryIds(@Param("team") Team team, @Param("member") TeamMember member);
 
-    // 팀의 모든 카테고리 열람 허용 대상 (TeamCategoryAccess)
-    @Query("""
-            select new com.backend.orbitflow.domain.category.dto.CategoryGrant(c.id, r.id, m.id)
-            from CategoryPermission cp
-            join cp.category c
-            left join cp.role r
-            left join cp.member m
-            where c.team = :team
-            """)
-    List<CategoryGrant> findGrantsByTeam(@Param("team") Team team);
-
-    // 사용자 본인 또는 본인 역할에 열람이 허용된 카테고리 (모든 팀, ViewerTeamScope)
-    @Query("""
-            select distinct c.id
-            from CategoryPermission cp
-            join cp.category c
-            left join cp.member m
-            left join cp.role r
-            where m.user = :user
-               or r in (select mr.role from TeamMemberRole mr where mr.member.user = :user)
-            """)
-    Set<Long> findAllowedCategoryIdsByUser(@Param("user") User user);
 
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("delete from CategoryPermission cp where cp.category = :category")

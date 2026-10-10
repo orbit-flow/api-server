@@ -13,7 +13,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
+import com.backend.orbitflow.global.common.dto.response.PageResponse;
+import org.springframework.web.bind.annotation.RequestParam;
 
 @RestController
 @RequiredArgsConstructor
@@ -23,15 +24,17 @@ public class TeamRoleController {
     private final TeamRoleFacade teamRoleFacade;
 
     @GetMapping
-    public ResponseEntity<CommonResponse<List<TeamRoleResponse>>> getRoles(
+    public ResponseEntity<CommonResponse<PageResponse<TeamRoleResponse>>> getRoles(
             @AuthenticationPrincipal AuthUser authUser,
-            @PathVariable String teamUuid
+            @PathVariable String teamUuid,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size
     ) {
         return ResponseEntity
                 .status(HttpStatus.OK)
                 .body(CommonResponse.success(
                         TeamSuccessCode.GET_ROLE_LIST,
-                        teamRoleFacade.getRoles(authUser, teamUuid)
+                        teamRoleFacade.getRoles(authUser, teamUuid, page, size)
                 ));
     }
 

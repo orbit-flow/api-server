@@ -1,12 +1,16 @@
 package com.backend.orbitflow.domain.purge.service;
 
+import com.backend.orbitflow.domain.notification.enums.NotificationType;
+import com.backend.orbitflow.domain.notification.event.NotificationRequest;
 import com.backend.orbitflow.domain.team.entity.Team;
-import com.backend.orbitflow.domain.team.service.TeamTodoInheritanceService;
+import com.backend.orbitflow.domain.todo.service.TodoTransferService;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.global.util.S3Service;
 import com.backend.orbitflow.global.util.S3TransactionalFileManager;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -45,16 +49,18 @@ public class DataPurgeService {
     private final TransactionTemplate transactionTemplate;
     private final S3Service s3Service;
     private final S3TransactionalFileManager s3FileManager;
-    private final TeamTodoInheritanceService teamTodoInheritanceService;
+    private final TodoTransferService todoTransferService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public DataPurgeService(EntityManager em, PlatformTransactionManager transactionManager,
                             S3Service s3Service, S3TransactionalFileManager s3FileManager,
-                            TeamTodoInheritanceService teamTodoInheritanceService) {
+                            TodoTransferService todoTransferService, ApplicationEventPublisher eventPublisher) {
         this.em = em;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.s3Service = s3Service;
         this.s3FileManager = s3FileManager;
-        this.teamTodoInheritanceService = teamTodoInheritanceService;
+        this.todoTransferService = todoTransferService;
+        this.eventPublisher = eventPublisher;
     }
 
     public void purgeAll() {
@@ -80,7 +86,11 @@ public class DataPurgeService {
     }
 
     private void purgeUser(Long userId) {
-        User user = em.find(User.class, userId);
+        // 목록 수집 이후 로그인으로 복구된 사용자를 지우지 않도록 락을 잡고 대상 조건을 다시 확인
+        User user = em.find(User.class, userId, LockModeType.PESSIMISTIC_WRITE);
+        if (user == null || !isPurgeTarget(user.getDeletedAt()) || (user.getEmail() != null && user.getEmail().startsWith(WITHDRAWN_EMAIL_PREFIX))) {
+            return;
+        }
         Map<String, Object> byUser = Map.of("user", user);
 
         // 연쇄 삭제될 게시글 사진 (작성한 게시글 + 개인 투두에 달린 게시글)
@@ -97,7 +107,7 @@ public class DataPurgeService {
                         "select m.team from TeamMember m where m.user = :user", Team.class)
                 .setParameter("user", user)
                 .getResultList();
-        teams.forEach(team -> teamTodoInheritanceService.inherit(team, user));
+        teams.forEach(team -> notifyInherited(team, todoTransferService.inherit(team, user)));
         update("delete from TeamMember m where m.user = :user", byUser);                 // 역할 부여·카테고리 권한 연쇄
         update("delete from TeamInvitation i where i.inviter = :user or i.invitee = :user", byUser);
 
@@ -124,6 +134,17 @@ public class DataPurgeService {
         s3FileManager.deleteAfterCommit(files);
     }
 
+    // 회원 탈퇴 후 영구 삭제로 상속된 투두 : 상속받은 구성원에게 팀별로 1건 (탈퇴한 사용자는 익명 처리)
+    private void notifyInherited(Team team, Map<Long, Integer> inherited) {
+        inherited.forEach((heirId, count) -> {
+            User heir = em.find(User.class, heirId);
+            if (heir != null) {
+                eventPublisher.publishEvent(NotificationRequest.to(heir, NotificationType.TODO_ASSIGNED, null, null, team.getUuid(),
+                        "'" + team.getName() + "' 팀을 떠난 탈퇴한 사용자님이 담당하던 투두 " + count + "개가 회원님에게 배정되었습니다."));
+            }
+        });
+    }
+
     // ---------- 삭제된 팀 ----------
 
     public int purgeTeams(LocalDateTime threshold) {
@@ -136,6 +157,11 @@ public class DataPurgeService {
 
     // 팀 행 삭제 시 채팅방(메시지)·카테고리(투두·게시글)·역할·구성원·초대는 DB가 연쇄 삭제
     private void purgeTeam(Long teamId) {
+        // 목록 수집 이후 복구된 팀은 삭제하지 않음 (락을 잡고 대상 조건을 다시 확인)
+        Team team = em.find(Team.class, teamId, LockModeType.PESSIMISTIC_WRITE);
+        if (team == null || !isPurgeTarget(team.getDeletedAt())) {
+            return;
+        }
         List<String> files = strings(
                 "select pi.imageUrl from PostImage pi where pi.post.todo.category.team.id = :teamId",
                 Map.of("teamId", teamId));
@@ -174,6 +200,11 @@ public class DataPurgeService {
     }
 
     // ---------- 공통 ----------
+
+    // 목록 수집 시점의 기준과 같은 보관 기간 조건 (복구되어 deletedAt이 null이거나 보관 기간 이내면 제외)
+    private boolean isPurgeTarget(LocalDateTime deletedAt) {
+        return deletedAt != null && deletedAt.isBefore(LocalDateTime.now().minusDays(RETENTION_DAYS));
+    }
 
     private List<String> strings(String query, Map<String, Object> params) {
         var typed = em.createQuery(query, String.class);

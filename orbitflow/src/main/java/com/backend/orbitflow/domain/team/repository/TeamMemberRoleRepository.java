@@ -10,8 +10,9 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.Collection;
 import java.util.List;
-import com.backend.orbitflow.domain.team.dto.TeamMaskRow;
-import com.backend.orbitflow.domain.user.entity.User;
+import com.backend.orbitflow.domain.team.entity.TeamRole;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 public interface TeamMemberRoleRepository extends JpaRepository<TeamMemberRole, Long> {
 
@@ -24,15 +25,11 @@ public interface TeamMemberRoleRepository extends JpaRepository<TeamMemberRole, 
     @Query("select mr from TeamMemberRole mr join fetch mr.role where mr.member in :members")
     List<TeamMemberRole> findAllWithRoleByMemberIn(@Param("members") Collection<TeamMember> members);
 
-    // 사용자의 모든 소속 팀의 역할 권한 (팀별 합산은 호출 측)
-    @Query("""
-            select new com.backend.orbitflow.domain.team.dto.TeamMaskRow(m.team.id, r.permissionsMask)
-            from TeamMemberRole mr
-            join mr.member m
-            join mr.role r
-            where m.user = :user
-            """)
-    List<TeamMaskRow> findTeamMasksByUser(@Param("user") User user);
+    // 구성원 한 명의 역할 목록 페이지 (우선순위 높은 순)
+    @Query(value = "select r from TeamMemberRole mr join mr.role r where mr.member = :member order by r.priority desc, r.id asc",
+            countQuery = "select count(mr) from TeamMemberRole mr where mr.member = :member")
+    Page<TeamRole> findRolesByMember(@Param("member") TeamMember member, Pageable pageable);
+
 
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query("delete from TeamMemberRole mr where mr.member in (select m from TeamMember m where m.team = :team)")

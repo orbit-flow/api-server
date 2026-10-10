@@ -15,7 +15,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
+import com.backend.orbitflow.global.common.dto.response.PageResponse;
+import org.springframework.web.bind.annotation.RequestParam;
 
 @RestController
 @RequiredArgsConstructor
@@ -40,28 +41,32 @@ public class CategoryController {
     }
 
     @GetMapping("/categories/me")
-    public ResponseEntity<CommonResponse<List<CategoryResponse>>> getMyCategories(
-            @AuthenticationPrincipal AuthUser authUser
+    public ResponseEntity<CommonResponse<PageResponse<CategoryResponse>>> getMyCategories(
+            @AuthenticationPrincipal AuthUser authUser,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size
     ) {
         return ResponseEntity
                 .status(HttpStatus.OK)
                 .body(CommonResponse.success(
                         CategorySuccessCode.GET_CATEGORY_LIST,
-                        categoryFacade.getMyCategories(authUser)
+                        categoryFacade.getMyCategories(authUser, page, size)
                 ));
     }
 
     // 다른 사용자의 카테고리 중 내가 열람 가능한 것만
     @GetMapping("/users/{userUuid}/categories")
-    public ResponseEntity<CommonResponse<List<CategoryResponse>>> getUserCategories(
+    public ResponseEntity<CommonResponse<PageResponse<CategoryResponse>>> getUserCategories(
             @AuthenticationPrincipal AuthUser authUser,
-            @PathVariable String userUuid
+            @PathVariable String userUuid,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size
     ) {
         return ResponseEntity
                 .status(HttpStatus.OK)
                 .body(CommonResponse.success(
                         CategorySuccessCode.GET_CATEGORY_LIST,
-                        categoryFacade.getUserCategories(authUser, userUuid)
+                        categoryFacade.getUserCategories(authUser, userUuid, page, size)
                 ));
     }
 
@@ -83,15 +88,17 @@ public class CategoryController {
 
     // 팀 카테고리 중 내가 열람 가능한 것만
     @GetMapping("/teams/{teamUuid}/categories")
-    public ResponseEntity<CommonResponse<List<CategoryResponse>>> getTeamCategories(
+    public ResponseEntity<CommonResponse<PageResponse<CategoryResponse>>> getTeamCategories(
             @AuthenticationPrincipal AuthUser authUser,
-            @PathVariable String teamUuid
+            @PathVariable String teamUuid,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size
     ) {
         return ResponseEntity
                 .status(HttpStatus.OK)
                 .body(CommonResponse.success(
                         CategorySuccessCode.GET_CATEGORY_LIST,
-                        categoryFacade.getTeamCategories(authUser, teamUuid)
+                        categoryFacade.getTeamCategories(authUser, teamUuid, page, size)
                 ));
     }
 
@@ -141,29 +148,31 @@ public class CategoryController {
 
     // PRIVATE 팀 카테고리의 열람 허용 역할·팀원
     @GetMapping("/categories/{categoryId}/permissions")
-    public ResponseEntity<CommonResponse<CategoryPermissionResponse>> getPermissions(
+    public ResponseEntity<CommonResponse<PageResponse<CategoryPermissionResponse>>> getPermissions(
             @AuthenticationPrincipal AuthUser authUser,
-            @PathVariable Long categoryId
+            @PathVariable Long categoryId,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size
     ) {
         return ResponseEntity
                 .status(HttpStatus.OK)
                 .body(CommonResponse.success(
                         CategorySuccessCode.GET_CATEGORY_PERMISSION,
-                        categoryFacade.getPermissions(authUser, categoryId)
+                        categoryFacade.getPermissions(authUser, categoryId, page, size)
                 ));
     }
 
     @PutMapping("/categories/{categoryId}/permissions")
-    public ResponseEntity<CommonResponse<CategoryPermissionResponse>> updatePermissions(
+    public ResponseEntity<CommonResponse<Void>> updatePermissions(
             @AuthenticationPrincipal AuthUser authUser,
             @PathVariable Long categoryId,
             @Valid @RequestBody CategoryPermissionRequest request
     ) {
+        categoryFacade.updatePermissions(authUser, categoryId, request);
         return ResponseEntity
                 .status(HttpStatus.OK)
                 .body(CommonResponse.success(
-                        CategorySuccessCode.CATEGORY_PERMISSION_UPDATE,
-                        categoryFacade.updatePermissions(authUser, categoryId, request)
+                        CategorySuccessCode.CATEGORY_PERMISSION_UPDATE
                 ));
     }
 }

@@ -4,7 +4,7 @@ import com.backend.orbitflow.domain.team.dto.response.TeamResponse;
 import com.backend.orbitflow.domain.team.entity.Team;
 import com.backend.orbitflow.domain.user.entity.User;
 
-import java.util.List;
+import org.springframework.data.domain.Page;
 
 public interface TeamService {
 
@@ -12,10 +12,11 @@ public interface TeamService {
 
     Team getActiveTeam(String uuid);
     Team createTeam(User owner, String name, String icon);
-    List<TeamResponse> getMyTeams(User user);
+    Page<TeamResponse> getMyTeams(User user, int page, int size);
     TeamResponse getMyTeam(User user, String uuid);
     void updateTeam(User user, String uuid, String name, String icon);
     void deleteTeam(User user, String uuid);
-    List<Team> getDeletedTeams(User owner);
+    Page<Team> getDeletedTeams(User owner, int page, int size);
     void restoreTeam(User user, String uuid);
+    boolean ownsActiveTeam(User user);
 }

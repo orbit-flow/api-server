@@ -17,8 +17,8 @@ import java.time.LocalDateTime;
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Table(name = "messages",
-        // ERD 확장 : 같은 전송 요청의 재시도(네트워크 오류 등)로 인한 중복 저장 차단
-        uniqueConstraints = @UniqueConstraint(columnNames = {"sender_id", "client_message_id"}),
+        // ERD 확장 : 같은 채팅방에서 같은 전송 요청의 재시도(네트워크 오류 등)로 인한 중복 저장 차단
+        uniqueConstraints = @UniqueConstraint(columnNames = {"chatroom_id", "sender_id", "client_message_id"}),
         indexes = @Index(columnList = "chatroom_id, id"))
 public class Message extends BaseEntity {
 

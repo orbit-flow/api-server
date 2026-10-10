@@ -21,9 +21,14 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.time.LocalDateTime;
-import java.util.Collection;
+import java.util.Collections;
+import java.util.EnumSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.ArrayList;
+import com.backend.orbitflow.global.util.JdbcBulkInserter;
+import com.backend.orbitflow.domain.notification.dto.NotificationDraft;
 
 @Slf4j
 @Service
@@ -33,53 +38,82 @@ public class NotificationServiceImpl implements NotificationService {
 
     private static final String EVENT_NAME = "notification";
 
+    // 같은 (유형, 행위자, 대상)의 알림은 수신자에게 한 번만 발송 : 좋아요 취소 후 재좋아요, 언팔로우 후 재팔로우, 완료 취소 후 재완료 등 토글성 활동
+    // 만료(30일)로 삭제된 알림은 다시 발송될 수 있음
+    private static final Set<NotificationType> ONCE_TYPES = EnumSet.of(
+            NotificationType.LIKE, NotificationType.SOCIAL, NotificationType.TODO_COMPLETED);
+
     private final NotificationRepository notificationRepository;
+    private final JdbcBulkInserter jdbcBulkInserter;
     private final NotificationEmitterRepository emitterRepository;
     private final BlockService blockService;
 
-    // 본인 활동, 차단 관계, 탈퇴·정지 계정에는 알림을 생성하지 않음
-    public void send(User receiver, NotificationType type, User actor, Long targetId, String targetUuid, String content) {
-        if (receiver.getDeletedAt() != null || receiver.getStatus() == UserStatus.BANNED) {
-            return;
-        }
-        if (actor != null) {
-            if (actor.getId().equals(receiver.getId()) || blockService.isBlocked(actor, receiver)) {
-                return;
-            }
-        }
-        Notification notification = notificationRepository.save(
-                Notification.of(receiver, type, actor, targetId, targetUuid, content)
-        );
-        NotificationResponse response = NotificationResponse.from(notification);
-        String uuid = receiver.getUuid();
-        // 저장이 확정된 뒤 실시간 전송
-        afterCommit(() -> emitterRepository.send(uuid, EVENT_NAME, response));
-    }
-
-    // 여러 수신자에게 같은 알림 : 차단 관계를 수신자 묶음 단위로 한 번에 확인 (수신자마다 조회하지 않음)
-    public void sendAll(Collection<User> receivers, NotificationType type, User actor, Long targetId, String targetUuid, String content) {
-        List<User> targets = receivers.stream()
-                .filter(receiver -> receiver.getDeletedAt() == null && receiver.getStatus() != UserStatus.BANNED)
-                .filter(receiver -> actor == null || !actor.getId().equals(receiver.getId()))
+    // 본인 활동, 차단 관계, 이미 발송한 토글성 활동에는 알림을 생성하지 않음
+    // 수신자 id·uuid만으로 같은 알림 일괄 발송 (팔로워 등 대량 수신자를 엔티티로 읽지 않도록), 차단 관계를 수신자 묶음 단위로 한 번에 확인 (수신자마다 조회하지 않음)
+    public void sendAll(Map<Long, String> receiverUuids, NotificationType type, User actor, Long targetId, String targetUuid, String content) {
+        List<Long> targets = receiverUuids.keySet().stream()
+                .filter(receiverId -> actor == null || !actor.getId().equals(receiverId))
                 .toList();
         if (targets.isEmpty()) {
             return;
         }
         Set<Long> blocked = actor == null
                 ? Set.of()
-                : blockService.findBlockedUserIdsAmong(actor, targets.stream().map(User::getId).toList());
-        List<Notification> notifications = notificationRepository.saveAll(targets.stream()
-                .filter(receiver -> !blocked.contains(receiver.getId()))
-                .map(receiver -> Notification.of(receiver, type, actor, targetId, targetUuid, content))
-                .toList());
-        List<Runnable> pushes = notifications.stream()
-                .map(notification -> {
-                    String uuid = notification.getUser().getUuid();
-                    NotificationResponse response = NotificationResponse.from(notification);
-                    return (Runnable) () -> emitterRepository.send(uuid, EVENT_NAME, response);
-                })
+                : blockService.findBlockedUserIdsAmong(actor, targets);
+        // 이미 발송한 수신자도 수신자 묶음 단위로 한 번에 확인
+        Set<Long> sent = actor == null || !ONCE_TYPES.contains(type)
+                ? Set.of()
+                : notificationRepository.findSentUserIds(targets, type, actor, onceTargetId(type, targetId));
+        List<Long> receiverIds = targets.stream()
+                .filter(receiverId -> !blocked.contains(receiverId))
+                .filter(receiverId -> !sent.contains(receiverId))
                 .toList();
-        // 저장이 확정된 뒤 실시간 전송
+        // 모든 수신자의 알림 내용이 같으므로 내용만 담은 draft 하나를 공유 (수신자는 receiverIds·uuid 목록 사용)
+        insertAndPush(receiverIds, receiverIds.stream().map(receiverUuids::get).toList(),
+                Collections.nCopies(receiverIds.size(), new NotificationDraft(null, type, targetId, targetUuid, content)), actor);
+    }
+
+    // 수신자마다 내용이 다른 알림 일괄 발송 (리마인드 등 행위자 없는 알림), 탈퇴·정지 사용자 제외
+    public void sendEach(List<NotificationDraft> drafts) {
+        insertAndPush(drafts.stream()
+                .filter(draft -> draft.receiver().getDeletedAt() == null && draft.receiver().getStatus() != UserStatus.BANNED)
+                .toList(), null);
+    }
+
+    // 팔로우는 언팔로우 후 다시 팔로우하면 follow id가 바뀌므로 대상과 무관하게 판정
+    private Long onceTargetId(NotificationType type, Long targetId) {
+        return type == NotificationType.SOCIAL ? null : targetId;
+    }
+
+    private void insertAndPush(List<NotificationDraft> drafts, User actor) {
+        insertAndPush(drafts.stream().map(draft -> draft.receiver().getId()).toList(),
+                drafts.stream().map(draft -> draft.receiver().getUuid()).toList(), drafts, actor);
+    }
+
+    // 알림 수와 무관하게 INSERT 1회 (JDBC 배치), 저장이 확정된 뒤 실시간 전송
+    // i번째 알림의 수신자는 receiverIds·receiverUuids의 i번째, 내용은 drafts의 i번째 (draft의 receiver는 사용하지 않음)
+    private void insertAndPush(List<Long> receiverIds, List<String> receiverUuids, List<NotificationDraft> drafts, User actor) {
+        if (receiverIds.isEmpty()) {
+            return;
+        }
+        Long actorId = actor == null ? null : actor.getId();
+        List<Object[]> rows = new ArrayList<>(receiverIds.size());
+        for (int i = 0; i < receiverIds.size(); i++) {
+            NotificationDraft draft = drafts.get(i);
+            rows.add(new Object[]{receiverIds.get(i), draft.type(), false, actorId,
+                    draft.targetId(), draft.targetUuid(), draft.content()});
+        }
+        List<Long> ids = jdbcBulkInserter.insert("notifications",
+                List.of("user_id", "type", "is_read", "actor_id", "target_id", "target_uuid", "content"), rows);
+        LocalDateTime now = LocalDateTime.now();
+        List<Runnable> pushes = new ArrayList<>();
+        for (int i = 0; i < receiverIds.size(); i++) {
+            NotificationDraft draft = drafts.get(i);
+            String uuid = receiverUuids.get(i);
+            NotificationResponse response = NotificationResponse.created(
+                    ids.get(i), draft.type(), draft.content(), actor, draft.targetId(), draft.targetUuid(), now);
+            pushes.add(() -> emitterRepository.send(uuid, EVENT_NAME, response));
+        }
         afterCommit(() -> pushes.forEach(Runnable::run));
     }
 
@@ -89,7 +123,7 @@ public class NotificationServiceImpl implements NotificationService {
 
     @Transactional(readOnly = true)
     public Page<NotificationResponse> getNotifications(User user, boolean unreadOnly, int page, int size) {
-        return notificationRepository.findAllByUser(user, threshold(), unreadOnly, PageRequest.of(Math.max(page - 1, 0), size))
+        return notificationRepository.findAllByUser(user, threshold(), unreadOnly, PageRequest.of(Math.max(page - 1, 0), Math.min(Math.max(size, 1), 100)))
                 .map(NotificationResponse::from);
     }
 

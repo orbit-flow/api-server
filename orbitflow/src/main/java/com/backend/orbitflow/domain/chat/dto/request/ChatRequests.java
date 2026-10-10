@@ -25,12 +25,14 @@ public final class ChatRequests {
             String title,
 
             @NotEmpty(message = "참여자는 비어있을 수 없습니다.")
+            @Size(max = 50, message = "한 번에 최대 50명까지 참여할 수 있습니다.")
             List<String> userUuids
     ) {
     }
 
     public record InviteRequest(
             @NotEmpty(message = "초대할 사용자는 비어있을 수 없습니다.")
+            @Size(max = 50, message = "한 번에 최대 50명까지 초대할 수 있습니다.")
             List<String> userUuids
     ) {
     }

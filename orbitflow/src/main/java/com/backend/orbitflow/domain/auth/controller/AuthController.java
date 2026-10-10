@@ -12,6 +12,8 @@ import com.backend.orbitflow.domain.auth.dto.response.EmailVarifyResponse;
 import com.backend.orbitflow.domain.auth.dto.response.TokenResponse;
 import com.backend.orbitflow.domain.auth.facade.AuthFacade;
 import com.backend.orbitflow.global.common.dto.response.CommonResponse;
+import com.backend.orbitflow.global.common.error.exception.CommonException;
+import com.backend.orbitflow.global.error.GlobalErrorCode;
 import com.backend.orbitflow.global.security.AuthUser;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +24,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import static com.backend.orbitflow.global.security.JwtProvider.AUTHORIZATION_HEADER;
+import static com.backend.orbitflow.global.security.JwtProvider.BEARER_PREFIX;
 import static com.backend.orbitflow.global.security.JwtProvider.REFRESH_HEADER;
 import com.backend.orbitflow.domain.auth.dto.response.LoginResponse;
 import com.backend.orbitflow.domain.auth.dto.response.LoginResult;
@@ -79,7 +82,11 @@ public class AuthController {
             @AuthenticationPrincipal AuthUser authUser,
             @RequestHeader(AUTHORIZATION_HEADER) String accessToken
     ) {
-        authFacade.logout(authUser, accessToken);
+        // 블랙리스트 키는 필터가 조회하는 순수 토큰이므로 Bearer 접두어 제거
+        if (authUser == null || !accessToken.startsWith(BEARER_PREFIX)) {
+            throw new CommonException(GlobalErrorCode.UNAUTHORIZED);
+        }
+        authFacade.logout(authUser, accessToken.substring(BEARER_PREFIX.length()));
         return ResponseEntity
                 .status(HttpStatus.OK)
                 .body(CommonResponse.success(

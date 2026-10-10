@@ -16,7 +16,9 @@ import lombok.NoArgsConstructor;
 @Getter
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@Table(name = "comments")
+// 최상위 댓글 목록 (post_id = ? and parent_comment_id is null order by created_at, id) 조건·정렬 순서와 일치 (id는 InnoDB 보조 인덱스에 포함)
+@Table(name = "comments",
+        indexes = @Index(columnList = "post_id, parent_comment_id, created_at"))
 public class Comment extends BaseEntity {
 
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)

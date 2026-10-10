@@ -10,8 +10,9 @@ import com.backend.orbitflow.domain.user.service.UserService;
 import com.backend.orbitflow.global.security.AuthUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
+import com.backend.orbitflow.global.common.dto.response.PageResponse;
 
 @Component
 @RequiredArgsConstructor
@@ -26,10 +27,12 @@ public class TeamFacade {
         return teamService.getMyTeam(user, team.getUuid());
     }
 
-    public List<TeamResponse> getMyTeams(AuthUser authUser) {
-        return teamService.getMyTeams(userService.getByUuid(authUser.getUuid()));
+    @Transactional(readOnly = true)
+    public PageResponse<TeamResponse> getMyTeams(AuthUser authUser, int page, int size) {
+        return PageResponse.from(teamService.getMyTeams(userService.getByUuid(authUser.getUuid()), page, size));
     }
 
+    @Transactional(readOnly = true)
     public TeamResponse getTeam(AuthUser authUser, String uuid) {
         return teamService.getMyTeam(userService.getByUuid(authUser.getUuid()), uuid);
     }
@@ -44,10 +47,10 @@ public class TeamFacade {
         teamService.deleteTeam(userService.getByUuid(authUser.getUuid()), uuid);
     }
 
-    public List<DeletedTeamResponse> getDeletedTeams(AuthUser authUser) {
-        return teamService.getDeletedTeams(userService.getByUuid(authUser.getUuid())).stream()
-                .map(team -> DeletedTeamResponse.from(team, TeamService.RETENTION_DAYS))
-                .toList();
+    @Transactional(readOnly = true)
+    public PageResponse<DeletedTeamResponse> getDeletedTeams(AuthUser authUser, int page, int size) {
+        return PageResponse.from(teamService.getDeletedTeams(userService.getByUuid(authUser.getUuid()), page, size)
+                .map(team -> DeletedTeamResponse.from(team, TeamService.RETENTION_DAYS)));
     }
 
     public TeamResponse restoreTeam(AuthUser authUser, String uuid) {

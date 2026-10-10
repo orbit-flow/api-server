@@ -15,7 +15,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
 import java.util.Arrays;
-import java.util.List;
 
 // 승인·환불은 PaymentService가 트랜잭션 경계를 직접 제어하므로 파사드에 @Transactional을 두지 않음
 @Component
@@ -25,10 +24,11 @@ public class PaymentFacade {
     private final PaymentService paymentService;
     private final UserService userService;
 
-    public List<PointPackageResponse> getPointPackages() {
-        return Arrays.stream(PointPackage.values())
+    // 상품 구성은 코드에 고정된 값이므로 메모리 목록을 같은 페이지 형식으로 반환
+    public PageResponse<PointPackageResponse> getPointPackages(int page, int size) {
+        return PageResponse.of(Arrays.stream(PointPackage.values())
                 .map(PointPackageResponse::from)
-                .toList();
+                .toList(), page, size);
     }
 
     public PaymentResponse createPayment(AuthUser authUser, PaymentCreateRequest request) {

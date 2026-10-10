@@ -12,15 +12,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.Optional;
-import com.backend.orbitflow.domain.team.dto.TeamMaskRow;
-import com.backend.orbitflow.domain.team.dto.TeamMembershipRow;
-import com.backend.orbitflow.domain.team.entity.TeamMemberRole;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.Collection;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -32,6 +28,21 @@ public class TeamAuthorityServiceImpl implements TeamAuthorityService {
 
     public Optional<TeamMember> findMember(Team team, User user) {
         return teamMemberRepository.findByTeamAndUser(team, user);
+    }
+
+    // users 중 팀 구성원 (한 번에 조회)
+    public List<TeamMember> findMembers(Team team, Collection<User> users) {
+        return users.isEmpty() ? List.of() : teamMemberRepository.findAllByTeamAndUserIn(team, users);
+    }
+
+    // users 중 팀 구성원인 사용자 id (한 번에 조회)
+    public Set<Long> findMemberUserIds(Team team, Collection<User> users) {
+        if (users.isEmpty()) {
+            return Set.of();
+        }
+        return teamMemberRepository.findAllByTeamAndUserIn(team, users).stream()
+                .map(member -> member.getUser().getId())
+                .collect(java.util.stream.Collectors.toSet());
     }
 
     // 비소속 사용자에게는 팀 존재 여부를 노출하지 않도록 NOT_FOUND 처리
@@ -50,38 +61,6 @@ public class TeamAuthorityServiceImpl implements TeamAuthorityService {
                 .reduce(0, (a, b) -> a | b);
     }
 
-    // 팀 전체 구성원의 권한을 쿼리 2회로 계산 (구성원마다 getPermissionMask를 호출하지 않도록)
-    public TeamPermissionSnapshot snapshot(Team team) {
-        List<TeamMember> members = teamMemberRepository.findAllWithUserByTeam(team);
-        Map<Long, Integer> masks = new HashMap<>();
-        Map<Long, Set<Long>> roleIds = new HashMap<>();
-        if (!members.isEmpty()) {
-            for (TeamMemberRole memberRole : teamMemberRoleRepository.findAllWithRoleByMemberIn(members)) {
-                Long memberId = memberRole.getMember().getId();
-                masks.merge(memberId, memberRole.getRole().getPermissionsMask(), (a, b) -> a | b);
-                roleIds.computeIfAbsent(memberId, key -> new HashSet<>()).add(memberRole.getRole().getId());
-            }
-        }
-        for (TeamMember member : members) {
-            if (team.isOwner(member.getUser())) {
-                masks.put(member.getId(), TeamPermission.all());
-            }
-        }
-        return new TeamPermissionSnapshot(team, members, masks, roleIds);
-    }
-
-    // 사용자가 소속된 모든 팀의 권한 (팀 id → mask), 쿼리 2회
-    public Map<Long, Integer> getPermissionMasksByTeam(User user) {
-        Map<Long, Integer> masks = new HashMap<>();
-        for (TeamMembershipRow membership : teamMemberRepository.findMembershipsByUser(user)) {
-            masks.put(membership.teamId(), membership.ownerId().equals(user.getId()) ? TeamPermission.all() : 0);
-        }
-        for (TeamMaskRow row : teamMemberRoleRepository.findTeamMasksByUser(user)) {
-            masks.computeIfPresent(row.teamId(), (teamId, mask) -> mask | row.mask());
-        }
-        return masks;
-    }
-
     public TeamMember checkPermission(Team team, User user, TeamPermission permission) {
         TeamMember member = getMember(team, user);
         if (!permission.isGranted(getPermissionMask(team, member))) {
@@ -96,5 +75,25 @@ public class TeamAuthorityServiceImpl implements TeamAuthorityService {
         if (!TeamPermission.contains(actorMask, mask)) {
             throw new CommonException(TeamErrorCode.CANNOT_GRANT_PERMISSION);
         }
+    }
+
+    public List<User> findMemberUsers(Team team) {
+        return teamMemberRepository.findAllWithUserByTeam(team).stream()
+                .map(TeamMember::getUser)
+                .toList();
+    }
+
+    // 팀 관리자 : 소유자 또는 MANAGE_TEAM 권한 보유자 (쿼리 1회, 구성원마다 권한을 조회하지 않음)
+    public List<User> findAdminUsers(Team team) {
+        return teamMemberRepository.findAdminUsers(team.getId());
+    }
+
+    // 구성원이 보유한 역할 id (구성원이 아니면 빈 집합)
+    public Set<Long> findRoleIds(Team team, User user) {
+        return findMember(team, user)
+                .map(member -> teamMemberRoleRepository.findAllWithRoleByMember(member).stream()
+                        .map(memberRole -> memberRole.getRole().getId())
+                        .collect(Collectors.toSet()))
+                .orElse(Set.of());
     }
 }

@@ -21,15 +21,28 @@ public interface PostLikeRepository extends JpaRepository<PostLike, Long> {
 
     boolean existsByPostAndUser(Post post, User user);
 
-    long countByPost(Post post);
+    // 게시글의 좋아요 수 (목록과 같은 조건 : 탈퇴한 사용자, viewer와 차단 관계인 사용자 제외)
+    @Query("""
+            select count(l) from PostLike l
+            join l.user u
+            where l.post = :post
+              and u.deletedAt is null
+              and not exists (select b.id from Block b
+                              where (b.blocker = :viewer and b.blockee = u) or (b.blocker = u and b.blockee = :viewer))
+            """)
+    long countByPost(@Param("post") Post post, @Param("viewer") User viewer);
 
     @Query("""
             select new com.backend.orbitflow.domain.post.dto.PostCount(l.post.id, count(l))
             from PostLike l
+            join l.user u
             where l.post in :posts
+              and u.deletedAt is null
+              and not exists (select b.id from Block b
+                              where (b.blocker = :viewer and b.blockee = u) or (b.blocker = u and b.blockee = :viewer))
             group by l.post.id
             """)
-    List<PostCount> countByPostIn(@Param("posts") Collection<Post> posts);
+    List<PostCount> countByPostIn(@Param("posts") Collection<Post> posts, @Param("viewer") User viewer);
 
     @Query("select l.post.id from PostLike l where l.post in :posts and l.user = :user")
     Set<Long> findLikedPostIds(@Param("posts") Collection<Post> posts, @Param("user") User user);

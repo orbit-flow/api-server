@@ -37,7 +37,7 @@ public class CommentController {
                 ));
     }
 
-    // 최상위 댓글 단위 페이지 (대댓글 포함)
+    // 최상위 댓글 페이지 (대댓글은 개수만, 본문은 /comments/{commentId}/replies)
     @GetMapping("/posts/{postId}/comments")
     public ResponseEntity<CommonResponse<PageResponse<CommentResponse>>> getComments(
             @AuthenticationPrincipal AuthUser authUser,
@@ -50,6 +50,22 @@ public class CommentController {
                 .body(CommonResponse.success(
                         CommentSuccessCode.GET_COMMENT_LIST,
                         commentFacade.getComments(authUser, postId, page, size)
+                ));
+    }
+
+    // 대댓글 페이지 (작성 순)
+    @GetMapping("/comments/{commentId}/replies")
+    public ResponseEntity<CommonResponse<PageResponse<CommentResponse>>> getReplies(
+            @AuthenticationPrincipal AuthUser authUser,
+            @PathVariable Long commentId,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size
+    ) {
+        return ResponseEntity
+                .status(HttpStatus.OK)
+                .body(CommonResponse.success(
+                        CommentSuccessCode.GET_COMMENT_LIST,
+                        commentFacade.getReplies(authUser, commentId, page, size)
                 ));
     }
 

@@ -24,8 +24,13 @@ import java.time.LocalDateTime;
 @Table(name = "todos",
         // 반복 회차 중복 생성 방지 (논리적 삭제된 회차 포함)
         uniqueConstraints = @UniqueConstraint(columnNames = {"routine_id", "start_date"}),
-        // 타임라인 투두 완료 활동 조회
-        indexes = @Index(columnList = "assignee_id, completed_at"))
+        indexes = {
+                // 타임라인 투두 완료 활동 조회
+                @Index(columnList = "assignee_id, completed_at"),
+                // 대시보드 기간 조회 : 지난 투두(end_date < from)는 계속 쌓이고 현재·이후 투두는 적으므로
+                // end_date 범위로 사용자의 전체 이력 대신 현재·이후 행만 읽음 (category_id FK 인덱스 대체 가능)
+                @Index(columnList = "category_id, type, end_date")
+        })
 // 저장·수정 시 리마인드 예약 목록(Redis) 갱신
 @EntityListeners(TodoReminderListener.class)
 public class Todo extends SoftDeleteEntity {
@@ -79,22 +84,28 @@ public class Todo extends SoftDeleteEntity {
     @Column(nullable = false)
     private int sortOrder;
 
+    // 반복 회차의 원래 시각 (회차 생성 시 설정, 수정해도 유지) : 원본 투두·일반 투두는 null
+    // 회차 슬롯 = coalesce(occurrenceDate, startDate) : 회차를 옮겨도 원래 슬롯이 다시 생성되지 않도록 구분
+    @Column(name = "occurrence_date")
+    private LocalDateTime occurrenceDate;
+
     public static Todo of(
             Category category, Todo parentTodo, User assignee, TodoType type, String name,
             LocalDateTime startDate, LocalDateTime endDate, Integer remindBeforeMinutes, int sortOrder
     ) {
         return new Todo(
                 null, category, parentTodo, null, assignee, type, name,
-                startDate, endDate, false, null, remindBeforeMinutes, sortOrder
+                startDate, endDate, false, null, remindBeforeMinutes, sortOrder, null
         );
     }
 
     // 원본 투두를 복사해 startDate에 시작하는 반복 회차 생성 (기간 길이 유지)
+    // origin이 지연 로딩 프록시일 수 있으므로 필드가 아니라 getter로 읽음 (프록시의 필드는 초기화되지 않아 null)
     public static Todo occurrence(Todo origin, Routine routine, LocalDateTime startDate) {
-        Duration period = Duration.between(origin.startDate, origin.endDate);
+        Duration period = Duration.between(origin.getStartDate(), origin.getEndDate());
         return new Todo(
-                null, origin.category, null, routine, origin.assignee, origin.type, origin.name,
-                startDate, startDate.plus(period), false, null, origin.remindBeforeMinutes, 0
+                null, origin.getCategory(), null, routine, origin.getAssignee(), origin.getType(), origin.getName(),
+                startDate, startDate.plus(period), false, null, origin.getRemindBeforeMinutes(), 0, startDate
         );
     }
 
@@ -121,6 +132,12 @@ public class Todo extends SoftDeleteEntity {
 
     public void updateRoutine(Routine routine) {
         this.routine = routine;
+    }
+
+    // 회차를 새 반복의 원본 투두로 전환 (원본 투두는 원래 시각이 없음)
+    public void promoteToOrigin(Routine routine) {
+        this.routine = routine;
+        this.occurrenceDate = null;
     }
 
     public boolean isChild() {

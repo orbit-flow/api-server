@@ -15,7 +15,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
+import com.backend.orbitflow.domain.team.dto.response.TeamRoleResponse;
+import com.backend.orbitflow.global.common.dto.response.PageResponse;
+import org.springframework.web.bind.annotation.RequestParam;
 
 @RestController
 @RequiredArgsConstructor
@@ -25,15 +27,34 @@ public class TeamMemberController {
     private final TeamMemberFacade teamMemberFacade;
 
     @GetMapping("/members")
-    public ResponseEntity<CommonResponse<List<TeamMemberResponse>>> getMembers(
+    public ResponseEntity<CommonResponse<PageResponse<TeamMemberResponse>>> getMembers(
             @AuthenticationPrincipal AuthUser authUser,
-            @PathVariable String teamUuid
+            @PathVariable String teamUuid,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size
     ) {
         return ResponseEntity
                 .status(HttpStatus.OK)
                 .body(CommonResponse.success(
                         TeamSuccessCode.GET_MEMBER_LIST,
-                        teamMemberFacade.getMembers(authUser, teamUuid)
+                        teamMemberFacade.getMembers(authUser, teamUuid, page, size)
+                ));
+    }
+
+    // 구성원 한 명의 전체 역할 (우선순위 높은 순), 구성원 목록에는 대표 역할과 개수만 포함
+    @GetMapping("/members/{userUuid}/roles")
+    public ResponseEntity<CommonResponse<PageResponse<TeamRoleResponse>>> getMemberRoles(
+            @AuthenticationPrincipal AuthUser authUser,
+            @PathVariable String teamUuid,
+            @PathVariable String userUuid,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size
+    ) {
+        return ResponseEntity
+                .status(HttpStatus.OK)
+                .body(CommonResponse.success(
+                        TeamSuccessCode.GET_ROLE_LIST,
+                        teamMemberFacade.getMemberRoles(authUser, teamUuid, userUuid, page, size)
                 ));
     }
 

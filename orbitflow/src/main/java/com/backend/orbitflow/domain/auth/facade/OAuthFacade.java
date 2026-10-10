@@ -18,7 +18,8 @@ import org.springframework.security.oauth2.core.OAuth2Error;
 import org.springframework.security.oauth2.core.user.DefaultOAuth2User;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.List;
 import java.util.Map;
@@ -28,19 +29,20 @@ import com.backend.orbitflow.domain.suspension.service.SuspensionNoticeTicketSer
 
 @Component
 @RequiredArgsConstructor
-@Transactional
 public class OAuthFacade extends DefaultOAuth2UserService {
 
     private final OAuthService oAuthService;
     private final UserService userService;
     private final SuspensionService suspensionService;
     private final SuspensionNoticeTicketService suspensionNoticeTicketService;
+    private final PlatformTransactionManager transactionManager;
 
     @Override
     @NullMarked
     public OAuth2User loadUser(OAuth2UserRequest userRequest)
             throws OAuth2AuthenticationException
     {
+        // 제공자 사용자 정보 조회(외부 HTTP)는 DB 커넥션을 잡지 않도록 트랜잭션 밖에서 수행
         OAuth2User oauth2User = super.loadUser(userRequest);
         String registrationId = userRequest.getClientRegistration().getRegistrationId();
         OAuth2UserInfo oAuth2UserInfo = switch (registrationId) {
@@ -50,7 +52,11 @@ public class OAuthFacade extends DefaultOAuth2UserService {
             case "github" -> new GithubUserInfo(oauth2User.getAttributes());
             default -> throw new CommonException(AuthErrorCode.UNSUPPORTED_OAUTH_PROVIDER);
         };
+        // 회원 조회·가입·연결과 상태 확인만 하나의 트랜잭션으로 (예외 시 롤백 후 그대로 전파)
+        return new TransactionTemplate(transactionManager).execute(status -> loadOrRegister(oAuth2UserInfo));
+    }
 
+    private OAuth2User loadOrRegister(OAuth2UserInfo oAuth2UserInfo) {
         Optional<User> user = oAuthService.findUser(oAuth2UserInfo.getProvider(), oAuth2UserInfo.getProviderId());
         User oAuthUser = user.orElseGet( () ->
                 userService.registerSocialUser(oAuth2UserInfo.getEmail(), oAuth2UserInfo.getName(), oAuth2UserInfo.getProfileUrl())

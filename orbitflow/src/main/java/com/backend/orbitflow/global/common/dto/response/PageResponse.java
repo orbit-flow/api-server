@@ -21,4 +21,19 @@ public record PageResponse<T>(
                 pagedData.getPageable().getPageNumber()
         );
     }
+
+    // DB가 아닌 메모리 목록(고정 상품 구성, 계산된 반복 회차 등)을 같은 페이지 형식으로 반환 (요청 page는 1부터)
+    public static <T> PageResponse<T> of(List<T> all, int page, int size) {
+        int pageIndex = Math.max(page - 1, 0);
+        int pageSize = Math.min(Math.max(size, 1), 100);
+        int from = (int) Math.min((long) pageIndex * pageSize, all.size());
+        int to = Math.min(from + pageSize, all.size());
+        return new PageResponse<>(
+                all.subList(from, to),
+                all.size(),
+                (all.size() + pageSize - 1) / pageSize,
+                pageSize,
+                pageIndex
+        );
+    }
 }

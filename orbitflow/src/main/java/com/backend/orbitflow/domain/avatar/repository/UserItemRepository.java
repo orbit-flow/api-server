@@ -13,6 +13,8 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 public interface UserItemRepository extends JpaRepository<UserItem, Long> {
 
@@ -21,8 +23,9 @@ public interface UserItemRepository extends JpaRepository<UserItem, Long> {
     @Query("select ui from UserItem ui join fetch ui.item where ui.avatar = :avatar and ui.item.id = :itemId")
     Optional<UserItem> findByAvatarAndItemId(@Param("avatar") Avatar avatar, @Param("itemId") Long itemId);
 
-    @Query("select ui from UserItem ui join fetch ui.item where ui.avatar = :avatar order by ui.createdAt desc")
-    List<UserItem> findAllWithItemByAvatar(@Param("avatar") Avatar avatar);
+    @Query(value = "select ui from UserItem ui join fetch ui.item where ui.avatar = :avatar order by ui.createdAt desc, ui.id desc",
+            countQuery = "select count(ui) from UserItem ui where ui.avatar = :avatar")
+    Page<UserItem> findAllWithItemByAvatar(@Param("avatar") Avatar avatar, Pageable pageable);
 
     @Query("select ui from UserItem ui join fetch ui.item where ui.avatar = :avatar and ui.isEquipped = true")
     List<UserItem> findEquippedByAvatar(@Param("avatar") Avatar avatar);

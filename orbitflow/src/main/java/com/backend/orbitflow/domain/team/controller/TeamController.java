@@ -14,7 +14,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
+import com.backend.orbitflow.global.common.dto.response.PageResponse;
+import org.springframework.web.bind.annotation.RequestParam;
 
 @RestController
 @RequiredArgsConstructor
@@ -38,27 +39,31 @@ public class TeamController {
 
     // 내가 소속된 팀 목록
     @GetMapping
-    public ResponseEntity<CommonResponse<List<TeamResponse>>> getMyTeams(
-            @AuthenticationPrincipal AuthUser authUser
+    public ResponseEntity<CommonResponse<PageResponse<TeamResponse>>> getMyTeams(
+            @AuthenticationPrincipal AuthUser authUser,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size
     ) {
         return ResponseEntity
                 .status(HttpStatus.OK)
                 .body(CommonResponse.success(
                         TeamSuccessCode.GET_TEAM_LIST,
-                        teamFacade.getMyTeams(authUser)
+                        teamFacade.getMyTeams(authUser, page, size)
                 ));
     }
 
     // 내가 소유한 팀 중 복구 가능한(삭제 후 30일 이내) 팀 목록
     @GetMapping("/deleted")
-    public ResponseEntity<CommonResponse<List<DeletedTeamResponse>>> getDeletedTeams(
-            @AuthenticationPrincipal AuthUser authUser
+    public ResponseEntity<CommonResponse<PageResponse<DeletedTeamResponse>>> getDeletedTeams(
+            @AuthenticationPrincipal AuthUser authUser,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size
     ) {
         return ResponseEntity
                 .status(HttpStatus.OK)
                 .body(CommonResponse.success(
                         TeamSuccessCode.GET_DELETED_TEAM_LIST,
-                        teamFacade.getDeletedTeams(authUser)
+                        teamFacade.getDeletedTeams(authUser, page, size)
                 ));
     }
 

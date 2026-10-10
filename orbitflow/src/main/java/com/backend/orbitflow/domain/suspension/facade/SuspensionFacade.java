@@ -12,6 +12,7 @@ import com.backend.orbitflow.global.common.dto.response.PageResponse;
 import com.backend.orbitflow.global.security.AuthUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Component
@@ -21,7 +22,8 @@ public class SuspensionFacade {
     private final SuspensionService suspensionService;
     private final UserService userService;
 
-    @Transactional
+    // 대상 사용자 행 락 이후 조회가 최신 커밋을 보도록 READ COMMITTED
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public SuspensionResponse suspend(AuthUser authUser, SuspensionRequest request) {
         return suspensionService.suspend(
                 userService.getByUuid(authUser.getUuid()),

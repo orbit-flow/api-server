@@ -70,10 +70,14 @@ public enum GlobalErrorCode implements ErrorCode{
             "동시에 처리 중인 요청이 있습니다. 잠시 후 다시 시도해주세요.",
             "https://orbitflow.com/errors/concurrent-request-conflict",
             "Concurrent Request Conflict"),
-    INVALID_TOKEN(HttpStatus.BAD_REQUEST,
+    INVALID_TOKEN(HttpStatus.UNAUTHORIZED,
                 "잘못된 로그인 정보입니다.",
                 "https://orbitflow.com/errors/invalid-token",
-                "Invalid Token");
+                "Invalid Token"),
+    DATA_CONFLICT(HttpStatus.CONFLICT,
+            "이미 존재하거나 다른 데이터와 충돌하는 요청입니다.",
+            "https://orbitflow.com/errors/data-conflict",
+            "Data Conflict");
     
     private final HttpStatus httpStatus;
     private final String message;

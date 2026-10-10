@@ -16,7 +16,12 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Table(name = "point_transactions",
-        indexes = @Index(columnList = "user_id, type, created_at"))
+        indexes = {
+                // 유형별 거래 내역, 오늘 출석 여부
+                @Index(columnList = "user_id, type, created_at"),
+                // 전체 거래 내역 (유형 미지정, 최신순)
+                @Index(columnList = "user_id, created_at")
+        })
 public class PointTransaction extends BaseEntity {
 
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)

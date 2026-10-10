@@ -1,6 +1,7 @@
 package com.backend.orbitflow.domain.todo.dto.request;
 
 import com.backend.orbitflow.domain.todo.enums.DurationType;
+import com.backend.orbitflow.domain.todo.enums.RoutineScope;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
@@ -20,6 +21,9 @@ public record RoutineRequest(
         Integer daysOfWeek,
 
         // null이면 종료일 없음
-        LocalDateTime repeatEndDate
+        LocalDateTime repeatEndDate,
+
+        // 이미 반복 중인 투두의 규칙을 변경할 때 필수 (ALL : 전체, FROM_TODAY : 오늘부터), 새로 설정할 때는 무시
+        RoutineScope scope
 ) {
 }

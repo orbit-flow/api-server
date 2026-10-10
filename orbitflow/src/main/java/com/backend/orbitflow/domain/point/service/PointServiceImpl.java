@@ -3,8 +3,8 @@ package com.backend.orbitflow.domain.point.service;
 import com.backend.orbitflow.domain.avatar.dto.response.LevelResponse;
 import com.backend.orbitflow.domain.avatar.entity.Avatar;
 import com.backend.orbitflow.domain.avatar.policy.LevelPolicy;
-import com.backend.orbitflow.domain.notification.event.PointEarnedEvent;
-import com.backend.orbitflow.domain.notification.event.PointRevokedEvent;
+import com.backend.orbitflow.domain.notification.enums.NotificationType;
+import com.backend.orbitflow.domain.notification.event.NotificationRequest;
 import com.backend.orbitflow.domain.point.dto.response.AttendanceResponse;
 import com.backend.orbitflow.domain.point.dto.response.AttendanceStatusResponse;
 import com.backend.orbitflow.domain.point.dto.response.PointTransactionResponse;
@@ -47,10 +47,9 @@ public class PointServiceImpl implements PointService {
         if (attendedToday(me)) {
             throw new CommonException(PointErrorCode.ALREADY_ATTENDED);
         }
-        PointTransaction transaction = pointLedger.deposit(me, PointTransactionType.ATTENDANCE, ATTENDANCE_POINT);
+        PointTransaction transaction = pointLedger.deposit(avatar, me, PointTransactionType.ATTENDANCE, ATTENDANCE_POINT);
         int before = avatar.getLevel();
         avatar.gainExp(LevelPolicy.ATTENDANCE_EXP);
-        eventPublisher.publishEvent(new PointEarnedEvent(me.getId(), "출석 포인트", ATTENDANCE_POINT, transaction.getBalanceAfter()));
         return new AttendanceResponse(
                 PointTransactionResponse.from(transaction),
                 LevelPolicy.ATTENDANCE_EXP,
@@ -71,8 +70,11 @@ public class PointServiceImpl implements PointService {
 
     @Transactional(readOnly = true)
     public Page<PointTransactionResponse> getUserHistory(User user, PointTransactionType type, int page, int size) {
-        return pointTransactionRepository.search(user, type, PageRequest.of(Math.max(page - 1, 0), size))
-                .map(PointTransactionResponse::from);
+        PageRequest pageable = PageRequest.of(Math.max(page - 1, 0), Math.min(Math.max(size, 1), 100));
+        Page<PointTransaction> transactions = type == null
+                ? pointTransactionRepository.searchAll(user, pageable)
+                : pointTransactionRepository.search(user, type, pageable);
+        return transactions.map(PointTransactionResponse::from);
     }
 
     // 무효·부정 출석으로 확정된 적립 포인트 회수 (잔액이 부족하면 음수로 기록)
@@ -91,9 +93,11 @@ public class PointServiceImpl implements PointService {
         if (pointTransactionRepository.existsBySourceTransaction(source)) {
             throw new CommonException(PointErrorCode.ALREADY_REVOKED);
         }
-        PointTransaction revoke = pointLedger.revoke(user, source);
+        PointTransaction revoke = pointLedger.revoke(avatar, user, source);
         avatar.loseExp(LevelPolicy.ATTENDANCE_EXP);
-        eventPublisher.publishEvent(new PointRevokedEvent(user.getId(), source.getAmount(), revoke.getBalanceAfter()));
+        // 회수 대상자는 원 거래로만 알 수 있으므로 여기서 알림 요청 (커밋 후 발송)
+        eventPublisher.publishEvent(NotificationRequest.to(user, NotificationType.POINT_REVOKED, null, null, null,
+                "무효 처리된 출석 포인트 " + source.getAmount() + "P가 회수되었습니다. (잔액 " + revoke.getBalanceAfter() + "P)"));
         return PointTransactionResponse.from(revoke);
     }
 

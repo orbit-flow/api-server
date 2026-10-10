@@ -1,6 +1,5 @@
 package com.backend.orbitflow.domain.chat.service;
 
-import com.backend.orbitflow.domain.block.repository.BlockRepository;
 import com.backend.orbitflow.domain.block.service.BlockService;
 import com.backend.orbitflow.domain.chat.dto.response.ChatEvent;
 import com.backend.orbitflow.domain.chat.dto.response.MessageResponse;
@@ -14,17 +13,18 @@ import com.backend.orbitflow.domain.chat.repository.MessageHideRepository;
 import com.backend.orbitflow.domain.chat.repository.MessageRepository;
 import com.backend.orbitflow.domain.chat.websocket.ChatPublisher;
 import com.backend.orbitflow.domain.user.entity.User;
+import com.backend.orbitflow.domain.user.service.UserService;
 import com.backend.orbitflow.domain.user.enums.UserStatus;
-import com.backend.orbitflow.domain.user.repository.UserRepository;
 import com.backend.orbitflow.global.common.error.exception.CommonException;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageRequest;
 
 @Service
 @RequiredArgsConstructor
@@ -33,8 +33,7 @@ public class MessageServiceImpl implements MessageService {
 
     private final MessageRepository messageRepository;
     private final MessageHideRepository messageHideRepository;
-    private final UserRepository userRepository;
-    private final BlockRepository blockRepository;
+    private final UserService userService;
     private final BlockService blockService;
     private final ChatroomService chatroomService;
     private final ChatPublisher chatPublisher;
@@ -47,7 +46,7 @@ public class MessageServiceImpl implements MessageService {
         ChatroomMember member = chatroomService.getMember(chatroom, me);
 
         if (clientMessageId != null) {
-            Optional<Message> existing = messageRepository.findBySenderAndClientMessageId(me, clientMessageId);
+            Optional<Message> existing = messageRepository.findByChatroomAndSenderAndClientMessageId(chatroom, me, clientMessageId);
             if (existing.isPresent()) {
                 return MessageResponse.of(existing.get(), chatroomUuid, false);
             }
@@ -65,17 +64,15 @@ public class MessageServiceImpl implements MessageService {
 
     // 참여 이후 메시지만 최신순 (beforeId 미지정 시 가장 최근부터), 내가 차단한 사용자의 메시지는 blockedSender 표시
     @Transactional(readOnly = true)
-    public List<MessageResponse> getMessages(User me, String chatroomUuid, Long beforeId, int size) {
+    // 최신순 페이지, beforeId를 주면 그보다 오래된 메시지만 (첫 조회 시점의 최신 id를 고정해 넘기면 새 메시지로 페이지가 밀리지 않음)
+    public Page<MessageResponse> getMessages(User me, String chatroomUuid, Long beforeId, int page, int size) {
+        Pageable pageable = toPageable(page, size);
         Chatroom chatroom = chatroomService.getChatroom(chatroomUuid);
         ChatroomMember member = chatroomService.getMember(chatroom, me);
-        Set<Long> blockeeIds = blockRepository.findBlockeeIds(me);
+        Set<Long> blockeeIds = blockService.findBlockeeIds(me);
         return messageRepository.findVisibleMessages(
-                        chatroom, me, member.joinedAt(),
-                        beforeId == null ? Long.MAX_VALUE : beforeId,
-                        PageRequest.of(0, Math.min(Math.max(size, 1), MAX_PAGE_SIZE))
-                ).stream()
-                .map(message -> MessageResponse.of(message, chatroomUuid, blockeeIds.contains(message.getSender().getId())))
-                .toList();
+                chatroom, me, member.joinedAt(), beforeId == null ? Long.MAX_VALUE : beforeId, pageable
+        ).map(message -> MessageResponse.of(message, chatroomUuid, blockeeIds.contains(message.getSender().getId())));
     }
 
     // ME : 내 화면에서만 삭제 / ALL : 작성자가 모든 참여자 대상 전송 취소 (즉시 적용)
@@ -111,7 +108,7 @@ public class MessageServiceImpl implements MessageService {
     // 상대가 대화에서 나갔으면 다시 참여시킴 (상대는 이 메시지부터 열람)
     private void prepareDirectPartner(Chatroom chatroom, User me) {
         Long partnerId = partnerId(chatroom, me);
-        User partner = userRepository.findById(partnerId)
+        User partner = userService.findById(partnerId)
                 .filter(user -> user.getDeletedAt() == null && user.getStatus() != UserStatus.BANNED)
                 .orElseThrow(() -> new CommonException(ChatErrorCode.CHAT_BLOCKED));
         if (blockService.isBlocked(me, partner)) {
@@ -125,5 +122,10 @@ public class MessageServiceImpl implements MessageService {
         Long first = Long.parseLong(ids[0]);
         Long second = Long.parseLong(ids[1]);
         return first.equals(me.getId()) ? second : first;
+    }
+
+    // 요청 page는 1부터 시작
+    private Pageable toPageable(int page, int size) {
+        return PageRequest.of(Math.max(page - 1, 0), Math.min(Math.max(size, 1), 100));
     }
 }

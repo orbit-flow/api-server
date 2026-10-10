@@ -26,10 +26,11 @@ import org.springframework.web.bind.annotation.PathVariable;
 import com.backend.orbitflow.domain.user.dto.response.OAuthAccountResponse;
 import com.backend.orbitflow.domain.user.dto.response.UserPasswordUpdateResult;
 import com.backend.orbitflow.domain.user.enums.Provider;
-import java.util.List;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.http.MediaType;
 import org.springframework.web.multipart.MultipartFile;
+import com.backend.orbitflow.global.common.dto.response.PageResponse;
+import org.springframework.web.bind.annotation.RequestParam;
 
 
 @RestController
@@ -131,14 +132,16 @@ public class UserController {
     }
 
     @GetMapping("/me/oauth-accounts")
-    public ResponseEntity<CommonResponse<List<OAuthAccountResponse>>> getOAuthAccounts(
-        @AuthenticationPrincipal AuthUser authUser
+    public ResponseEntity<CommonResponse<PageResponse<OAuthAccountResponse>>> getOAuthAccounts(
+        @AuthenticationPrincipal AuthUser authUser,
+        @RequestParam(defaultValue = "1") int page,
+        @RequestParam(defaultValue = "20") int size
     ) {
         return ResponseEntity
             .status(HttpStatus.OK)
             .body(CommonResponse.success(
                 UserSuccessCode.GET_OAUTH_ACCOUNTS,
-                userFacade.getOAuthAccounts(authUser)
+                userFacade.getOAuthAccounts(authUser, page, size)
             ));
     }
 

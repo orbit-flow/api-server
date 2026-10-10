@@ -24,17 +24,29 @@ public interface PointTransactionRepository extends JpaRepository<PointTransacti
     @Query("select t from PointTransaction t join fetch t.user where t.id = :id")
     Optional<PointTransaction> findWithUserById(@Param("id") Long id);
 
-    // 거래 내역 (type 미지정 시 전체, 최신순)
+    // 거래 내역 (최신순) : 유형 지정 여부에 따라 쿼리를 나눠 각각 (user_id, type, created_at), (user_id, created_at) 인덱스 사용
+    // (:type is null or ...) 형태는 실행 계획이 한 번에 정해져 유형 미지정 시에도 정렬 인덱스를 쓰지 못함
     @Query(value = """
             select t from PointTransaction t
             where t.user = :user
-              and (:type is null or t.type = :type)
             order by t.createdAt desc, t.id desc
             """,
             countQuery = """
             select count(t) from PointTransaction t
             where t.user = :user
-              and (:type is null or t.type = :type)
+            """)
+    Page<PointTransaction> searchAll(@Param("user") User user, Pageable pageable);
+
+    @Query(value = """
+            select t from PointTransaction t
+            where t.user = :user
+              and t.type = :type
+            order by t.createdAt desc, t.id desc
+            """,
+            countQuery = """
+            select count(t) from PointTransaction t
+            where t.user = :user
+              and t.type = :type
             """)
     Page<PointTransaction> search(@Param("user") User user, @Param("type") PointTransactionType type, Pageable pageable);
 }

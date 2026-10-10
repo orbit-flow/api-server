@@ -13,31 +13,42 @@ import org.springframework.data.repository.query.Param;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Collection;
+import java.util.Set;
 
 public interface FollowRepository extends JpaRepository<Follow, Long> {
 
     Optional<Follow> findByFollowerAndFollowee(User follower, User followee);
 
-    // 타임라인 대상 : 내가 팔로우 중인(승인된) 계정 (탈퇴 사용자 제외)
+    // userIds 중 user를 팔로우 중인(승인된) 사용자 id
     @Query("""
-            select u from Follow f
-            join f.followee u
-            where f.follower = :user
+            select f.follower.id from Follow f
+            where f.followee = :user
               and f.state = com.backend.orbitflow.domain.follow.enums.FollowState.ACCEPTED
-              and u.deletedAt is null
+              and f.follower.id in :userIds
             """)
-    List<User> findAcceptedFollowees(@Param("user") User user);
+    Set<Long> findFollowerIdsAmong(@Param("user") User user, @Param("userIds") Collection<Long> userIds);
 
-    // 활동 알림 수신 대상 : 승인된 팔로워 중 해당 계정의 알림을 켠 사용자 (탈퇴 사용자 제외)
+    // 활동 알림 수신 대상 : 승인된 팔로워 중 해당 계정의 알림을 켠 사용자 (탈퇴·정지 사용자 제외)
+    // 팔로워 수와 무관하게 메모리를 쓰지 않도록 발송에 필요한 id·uuid만, afterId 이후 id 순으로 pageable 크기만큼 조회
     @Query("""
-            select u from Follow f
+            select u.id as id, u.uuid as uuid from Follow f
             join f.follower u
             where f.followee = :user
               and f.state = com.backend.orbitflow.domain.follow.enums.FollowState.ACCEPTED
               and f.notificationEnabled = true
               and u.deletedAt is null
+              and u.status <> com.backend.orbitflow.domain.user.enums.UserStatus.BANNED
+              and u.id > :afterId
+            order by u.id asc
             """)
-    List<User> findNotifiableFollowers(@Param("user") User user);
+    List<NotifiableFollower> findNotifiableFollowers(@Param("user") User user, @Param("afterId") Long afterId, Pageable pageable);
+
+    interface NotifiableFollower {
+
+        Long getId();
+        String getUuid();
+    }
 
     @Query("select f from Follow f join fetch f.follower join fetch f.followee where f.id = :id")
     Optional<Follow> findWithUsersById(@Param("id") Long id);

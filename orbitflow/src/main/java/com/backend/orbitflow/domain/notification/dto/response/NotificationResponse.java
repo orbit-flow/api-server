@@ -23,6 +23,16 @@ public record NotificationResponse(
     public record Actor(String uuid, String name, String profileImage) {
     }
 
+    // 일괄 저장(JDBC)한 알림의 실시간 전송용 : 저장된 값으로 직접 생성
+    public static NotificationResponse created(Long id, NotificationType type, String content, User actor,
+                                               Long targetId, String targetUuid, LocalDateTime createdAt) {
+        return new NotificationResponse(
+                id, type, content, false,
+                actor == null ? null : new Actor(actor.getUuid(), actor.getName(), actor.getProfileImage()),
+                targetId, targetUuid, createdAt
+        );
+    }
+
     public static NotificationResponse from(Notification notification) {
         User actor = notification.getActor();
         return new NotificationResponse(

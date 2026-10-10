@@ -17,7 +17,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
+import org.springframework.web.bind.annotation.RequestParam;
 
 // 흐름 : 상품 조회 -> 주문 생성(orderId, amount) -> PG 결제창 -> 승인(confirm) -> 포인트 적립
 @RestController
@@ -28,12 +28,15 @@ public class PaymentController {
     private final PaymentFacade paymentFacade;
 
     @GetMapping("/packages")
-    public ResponseEntity<CommonResponse<List<PointPackageResponse>>> getPointPackages() {
+    public ResponseEntity<CommonResponse<PageResponse<PointPackageResponse>>> getPointPackages(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size
+    ) {
         return ResponseEntity
                 .status(HttpStatus.OK)
                 .body(CommonResponse.success(
                         PaymentSuccessCode.GET_POINT_PACKAGES,
-                        paymentFacade.getPointPackages()
+                        paymentFacade.getPointPackages(page, size)
                 ));
     }
 

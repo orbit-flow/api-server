@@ -4,15 +4,23 @@ import com.backend.orbitflow.domain.category.dto.request.CategoryPermissionReque
 import com.backend.orbitflow.domain.category.dto.request.CategoryRequest;
 import com.backend.orbitflow.domain.category.dto.response.CategoryPermissionResponse;
 import com.backend.orbitflow.domain.category.dto.response.CategoryResponse;
+import com.backend.orbitflow.domain.category.entity.Category;
+import com.backend.orbitflow.domain.category.enums.Visibility;
 import com.backend.orbitflow.domain.category.service.CategoryService;
+import com.backend.orbitflow.domain.notification.enums.NotificationType;
+import com.backend.orbitflow.domain.notification.event.NotificationRequest;
+import com.backend.orbitflow.domain.team.entity.Team;
+import com.backend.orbitflow.domain.team.service.TeamAuthorityService;
 import com.backend.orbitflow.domain.team.service.TeamService;
+import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.domain.user.service.UserService;
 import com.backend.orbitflow.global.security.AuthUser;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
+import com.backend.orbitflow.global.common.dto.response.PageResponse;
 
 @Component
 @RequiredArgsConstructor
@@ -21,6 +29,8 @@ public class CategoryFacade {
     private final CategoryService categoryService;
     private final UserService userService;
     private final TeamService teamService;
+    private final TeamAuthorityService teamAuthorityService;
+    private final ApplicationEventPublisher eventPublisher;
 
     @Transactional
     public CategoryResponse createPersonalCategory(AuthUser authUser, CategoryRequest request) {
@@ -44,24 +54,26 @@ public class CategoryFacade {
     }
 
     @Transactional(readOnly = true)
-    public List<CategoryResponse> getMyCategories(AuthUser authUser) {
-        return categoryService.getMyCategories(userService.getByUuid(authUser.getUuid()));
+    public PageResponse<CategoryResponse> getMyCategories(AuthUser authUser, int page, int size) {
+        return PageResponse.from(categoryService.getMyCategories(userService.getByUuid(authUser.getUuid()), page, size));
     }
 
     @Transactional(readOnly = true)
-    public List<CategoryResponse> getUserCategories(AuthUser authUser, String userUuid) {
-        return categoryService.getUserCategories(
+    public PageResponse<CategoryResponse> getUserCategories(AuthUser authUser, String userUuid, int page, int size) {
+        return PageResponse.from(categoryService.getUserCategories(
                 userService.getByUuid(authUser.getUuid()),
-                userService.getByUuid(userUuid)
-        );
+                userService.getByUuid(userUuid),
+                page, size
+        ));
     }
 
     @Transactional(readOnly = true)
-    public List<CategoryResponse> getTeamCategories(AuthUser authUser, String teamUuid) {
-        return categoryService.getTeamCategories(
+    public PageResponse<CategoryResponse> getTeamCategories(AuthUser authUser, String teamUuid, int page, int size) {
+        return PageResponse.from(categoryService.getTeamCategories(
                 userService.getByUuid(authUser.getUuid()),
-                teamService.getActiveTeam(teamUuid)
-        );
+                teamService.getActiveTeam(teamUuid),
+                page, size
+        ));
     }
 
     @Transactional(readOnly = true)
@@ -69,15 +81,22 @@ public class CategoryFacade {
         return categoryService.getCategory(userService.getByUuid(authUser.getUuid()), categoryId);
     }
 
+    // 팀 카테고리 공개 범위 변경 시 변경 전 또는 변경 후에 조회 권한이 있는 팀원에게 알림 (변경한 본인 제외)
+    // 변경 전·후 중 한쪽은 반드시 PRIVATE가 아니므로(PUBLIC·FOLLOWER는 모든 팀원 조회 가능) 대상은 모든 팀원
     @Transactional
     public CategoryResponse updateCategory(AuthUser authUser, Long categoryId, CategoryRequest request) {
-        return categoryService.updateCategory(
-                userService.getByUuid(authUser.getUuid()),
-                categoryId,
-                request.name(),
-                request.color(),
-                request.visibility()
-        );
+        User me = userService.getByUuid(authUser.getUuid());
+        Category category = categoryService.getActiveCategory(categoryId);
+        Visibility before = category.getVisibility();
+        CategoryResponse response = categoryService.updateCategory(me, categoryId, request.name(), request.color(), request.visibility());
+        if (category.isTeamCategory() && before != request.visibility()) {
+            Team team = category.getTeam();
+            eventPublisher.publishEvent(NotificationRequest.toAll(teamAuthorityService.findMemberUsers(team),
+                    NotificationType.CATEGORY_VISIBILITY_CHANGED, me, category.getId(), team.getUuid(),
+                    "'" + team.getName() + "' 팀의 '" + category.getName() + "' 카테고리 공개 범위가 "
+                            + request.visibility() + "(으)로 변경되었습니다."));
+        }
+        return response;
     }
 
     @Transactional
@@ -86,19 +105,17 @@ public class CategoryFacade {
     }
 
     @Transactional(readOnly = true)
-    public CategoryPermissionResponse getPermissions(AuthUser authUser, Long categoryId) {
-        return categoryService.getPermissions(userService.getByUuid(authUser.getUuid()), categoryId);
+    public PageResponse<CategoryPermissionResponse> getPermissions(AuthUser authUser, Long categoryId, int page, int size) {
+        return PageResponse.from(categoryService.getPermissions(userService.getByUuid(authUser.getUuid()), categoryId, page, size));
     }
 
     @Transactional
-    public CategoryPermissionResponse updatePermissions(AuthUser authUser, Long categoryId, CategoryPermissionRequest request) {
-        return categoryService.updatePermissions(
+    public void updatePermissions(AuthUser authUser, Long categoryId, CategoryPermissionRequest request) {
+        categoryService.updatePermissions(
                 userService.getByUuid(authUser.getUuid()),
                 categoryId,
                 request.roleIds(),
-                request.memberUuids().stream()
-                        .map(userService::getByUuid)
-                        .toList()
+                userService.getAllByUuids(request.memberUuids())
         );
     }
 }

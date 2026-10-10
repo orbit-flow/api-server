@@ -12,4 +12,7 @@ public record DormantReleaseRequest(
         @NotBlank(message = "인증 코드는 비어있을 수 없습니다.")
         String code
 ) {
+    public DormantReleaseRequest {
+        email = email == null ? null : email.trim().toLowerCase();
+    }
 }

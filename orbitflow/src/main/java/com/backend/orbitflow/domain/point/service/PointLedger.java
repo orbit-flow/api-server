@@ -56,7 +56,8 @@ public class PointLedger {
     }
 
     // 아바타 행 락 획득 후 최신 잔액으로 갱신 (이미 영속성 컨텍스트에 있던 오래된 상태를 사용하지 않음)
-    // 같은 트랜잭션에서 다시 호출해도 이미 보유한 락이므로 대기하지 않음
+    // 락 조회 1회(@Lock)로 줄이지 않는 이유 : 같은 트랜잭션에서 먼저 읽은 아바타가 있으면 FOR UPDATE 조회도 그 오래된 인스턴스를 그대로 반환함 (refresh는 다시 읽음)
+    // 같은 트랜잭션에서 다시 호출해도 이미 보유한 락이므로 대기하지 않음, 한 요청에서 여러 번 부르지 않도록 잠근 아바타를 받는 메서드를 사용
     // 아바타는 가입 트랜잭션에서 생성되므로 없으면 오류 (지연 생성으로 인한 동시 생성 경합 없음)
     public Avatar lock(User user) {
         requireReadCommitted();
@@ -69,20 +70,35 @@ public class PointLedger {
 
     // 잔액이 부족하면 거부 (구매·환불 등)
     public PointTransaction withdraw(User user, PointTransactionType type, int amount) {
-        Avatar avatar = lock(user);
-        if (!avatar.hasPoint(amount)) {
+        return withdraw(lock(user), user, type, amount);
+    }
+
+    // 호출자가 이미 lock()으로 잠근 아바타를 넘기는 경우 (락 조회 중복 방지)
+    public PointTransaction withdraw(Avatar locked, User user, PointTransactionType type, int amount) {
+        requireReadCommitted();
+        if (!locked.hasPoint(amount)) {
             throw new CommonException(PointErrorCode.NOT_ENOUGH_POINT);
         }
-        return apply(avatar, user, type, -amount, null);
+        return apply(locked, user, type, -amount, null);
     }
 
     public PointTransaction deposit(User user, PointTransactionType type, int amount) {
-        return apply(lock(user), user, type, amount, null);
+        return deposit(lock(user), user, type, amount);
+    }
+
+    public PointTransaction deposit(Avatar locked, User user, PointTransactionType type, int amount) {
+        requireReadCommitted();
+        return apply(locked, user, type, amount, null);
     }
 
     // 무효·부정 출석 회수 : 잔액이 부족해도 회수하고 음수로 기록
     public PointTransaction revoke(User user, PointTransaction source) {
-        return apply(lock(user), user, PointTransactionType.REVOKE, -source.getAmount(), source);
+        return revoke(lock(user), user, source);
+    }
+
+    public PointTransaction revoke(Avatar locked, User user, PointTransaction source) {
+        requireReadCommitted();
+        return apply(locked, user, PointTransactionType.REVOKE, -source.getAmount(), source);
     }
 
     private PointTransaction apply(Avatar avatar, User user, PointTransactionType type, int amount, PointTransaction source) {

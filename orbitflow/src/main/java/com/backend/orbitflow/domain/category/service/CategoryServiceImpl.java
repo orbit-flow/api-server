@@ -3,7 +3,6 @@ package com.backend.orbitflow.domain.category.service;
 import com.backend.orbitflow.domain.category.dto.response.CategoryPermissionResponse;
 import com.backend.orbitflow.domain.category.dto.response.CategoryResponse;
 import com.backend.orbitflow.domain.category.entity.Category;
-import com.backend.orbitflow.domain.category.entity.CategoryPermission;
 import com.backend.orbitflow.domain.category.enums.Visibility;
 import com.backend.orbitflow.domain.category.error.CategoryErrorCode;
 import com.backend.orbitflow.domain.category.repository.CategoryPermissionRepository;
@@ -13,15 +12,13 @@ import com.backend.orbitflow.domain.team.entity.TeamMember;
 import com.backend.orbitflow.domain.team.entity.TeamRole;
 import com.backend.orbitflow.domain.team.enums.TeamPermission;
 import com.backend.orbitflow.domain.team.error.TeamErrorCode;
-import com.backend.orbitflow.domain.team.repository.TeamRoleRepository;
 import com.backend.orbitflow.domain.team.service.TeamAuthorityService;
-import com.backend.orbitflow.domain.todo.repository.TodoRepository;
+import com.backend.orbitflow.domain.team.service.TeamRoleService;
+import com.backend.orbitflow.domain.todo.service.TodoTransferService;
 import com.backend.orbitflow.domain.user.entity.User;
+import com.backend.orbitflow.domain.user.enums.UserStatus;
 import com.backend.orbitflow.global.common.error.exception.CommonException;
-import com.backend.orbitflow.domain.notification.event.CategoryVisibilityChangedEvent;
-import com.backend.orbitflow.domain.team.repository.TeamMemberRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -29,20 +26,23 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import com.backend.orbitflow.global.util.JdbcBulkInserter;
+import org.springframework.data.domain.PageRequest;
 
 @Service
 @RequiredArgsConstructor
 @Transactional
 public class CategoryServiceImpl implements CategoryService {
 
+    private final JdbcBulkInserter jdbcBulkInserter;
     private final CategoryRepository categoryRepository;
     private final CategoryPermissionRepository categoryPermissionRepository;
     private final CategoryAuthorityService categoryAuthorityService;
     private final TeamAuthorityService teamAuthorityService;
-    private final TeamRoleRepository teamRoleRepository;
-    private final TodoRepository todoRepository;
-    private final ApplicationEventPublisher eventPublisher;
-    private final TeamMemberRepository teamMemberRepository;
+    private final TeamRoleService teamRoleService;
+    private final TodoTransferService todoTransferService;
 
     public CategoryResponse createPersonalCategory(User user, String name, String color, Visibility visibility) {
         return CategoryResponse.from(categoryRepository.save(Category.personal(user, name, color, visibility)));
@@ -54,22 +54,21 @@ public class CategoryServiceImpl implements CategoryService {
     }
 
     @Transactional(readOnly = true)
-    public List<CategoryResponse> getMyCategories(User me) {
-        return toResponses(categoryRepository.findAllByUserOrderByCreatedAtAsc(me));
+    public Page<CategoryResponse> getMyCategories(User me, int page, int size) {
+        Pageable pageable = toPageable(page, size);
+        return categoryRepository.findAllByUserOrderByCreatedAtAscIdAsc(me, pageable).map(CategoryResponse::from);
     }
 
     @Transactional(readOnly = true)
-    public List<CategoryResponse> getUserCategories(User viewer, User owner) {
-        return toResponses(categoryAuthorityService.filterViewablePersonal(
-                owner, viewer, categoryRepository.findAllByUserOrderByCreatedAtAsc(owner)
-        ));
+    // 열람 판정은 조회 쿼리에서 (조회 후 걸러내지 않으므로 페이지 크기가 정확함)
+    public Page<CategoryResponse> getUserCategories(User viewer, User owner, int page, int size) {
+        return categoryRepository.findViewablePersonal(owner.getId(), viewer.getId(), toPageable(page, size)).map(CategoryResponse::from);
     }
 
     @Transactional(readOnly = true)
-    public List<CategoryResponse> getTeamCategories(User viewer, Team team) {
-        return toResponses(categoryAuthorityService.filterViewableTeam(
-                team, viewer, categoryRepository.findAllByTeamOrderByCreatedAtAsc(team)
-        ));
+    public Page<CategoryResponse> getTeamCategories(User viewer, Team team, int page, int size) {
+        Pageable pageable = toPageable(page, size);
+        return categoryRepository.findViewableTeam(team.getId(), viewer.getId(), pageable).map(CategoryResponse::from);
     }
 
     @Transactional(readOnly = true)
@@ -83,13 +82,7 @@ public class CategoryServiceImpl implements CategoryService {
     public CategoryResponse updateCategory(User actor, Long categoryId, String name, String color, Visibility visibility) {
         Category category = getActiveCategory(categoryId);
         categoryAuthorityService.checkEdit(category, actor);
-        Visibility before = category.getVisibility();
-        Set<Long> viewerIdsBefore = category.isTeamCategory() ? teamViewerIds(category) : Set.of();
         category.updateCategory(name, color, visibility);
-        // 팀 카테고리 공개 범위 변경 시 변경 전·후 조회 권한이 있는 팀원에게 알림
-        if (category.isTeamCategory() && before != category.getVisibility()) {
-            eventPublisher.publishEvent(new CategoryVisibilityChangedEvent(category.getId(), actor.getId(), viewerIdsBefore));
-        }
         return CategoryResponse.from(category);
     }
 
@@ -104,42 +97,47 @@ public class CategoryServiceImpl implements CategoryService {
         Category moveTo = categoryRepository.findWithOwnerById(moveToCategoryId)
                 .filter(category::isSameOwner)
                 .orElseThrow(() -> new CommonException(CategoryErrorCode.INVALID_MOVE_TARGET));
-        todoRepository.moveAllToCategory(category, moveTo);
+        todoTransferService.moveAllToCategory(category, moveTo);
         categoryRepository.deleteById(category.getId());
     }
 
+    // 팀 삭제 시 팀원 개별 열람 권한 삭제 (역할 열람 권한은 복구를 위해 유지)
+    public void deleteAllMemberPermissionsByTeam(Team team) {
+        categoryPermissionRepository.deleteAllMemberPermissionsByTeam(team);
+    }
+
     @Transactional(readOnly = true)
-    public CategoryPermissionResponse getPermissions(User actor, Long categoryId) {
+    public Page<CategoryPermissionResponse> getPermissions(User actor, Long categoryId, int page, int size) {
+        Pageable pageable = toPageable(page, size);
         Category category = getTeamCategoryForManage(actor, categoryId);
-        return CategoryPermissionResponse.of(category.getId(), categoryPermissionRepository.findAllWithTargetByCategory(category));
+        return categoryPermissionRepository.findPageByCategory(category, pageable);
     }
 
     // PRIVATE 팀 카테고리의 열람 허용 대상을 요청 목록으로 교체
-    public CategoryPermissionResponse updatePermissions(User actor, Long categoryId, List<Long> roleIds, List<User> members) {
+    public void updatePermissions(User actor, Long categoryId, List<Long> roleIds, List<User> members) {
         Category category = getTeamCategoryForManage(actor, categoryId);
         Team team = category.getTeam();
 
         Set<Long> roleIdSet = new HashSet<>(roleIds);
-        List<TeamRole> roles = teamRoleRepository.findAllByTeamAndIdIn(team, roleIdSet);
+        List<TeamRole> roles = teamRoleService.findRoles(team, roleIdSet);
         if (roles.size() != roleIdSet.size()) {
             throw new CommonException(TeamErrorCode.ROLE_NOT_FOUND);
         }
-        List<TeamMember> teamMembers = members.stream()
-                .distinct()
-                .map(user -> teamAuthorityService.findMember(team, user).orElseThrow(
-                        () -> new CommonException(TeamErrorCode.MEMBER_NOT_FOUND)
-                ))
-                .toList();
+        // 지정한 사용자가 모두 팀원인지 한 번에 확인
+        List<TeamMember> teamMembers = teamAuthorityService.findMembers(team, members);
+        if (teamMembers.size() != members.stream().distinct().count()) {
+            throw new CommonException(TeamErrorCode.MEMBER_NOT_FOUND);
+        }
 
         categoryPermissionRepository.deleteAllByCategory(category);
-        List<CategoryPermission> permissions = new ArrayList<>();
-        roles.forEach(role -> permissions.add(CategoryPermission.ofRole(category, role)));
-        teamMembers.forEach(member -> permissions.add(CategoryPermission.ofMember(category, member)));
-        categoryPermissionRepository.saveAll(permissions);
-        return CategoryPermissionResponse.of(category.getId(), categoryPermissionRepository.findAllWithTargetByCategory(category));
+        // 대상 수와 무관하게 INSERT 1회
+        List<Object[]> rows = new ArrayList<>();
+        roles.forEach(role -> rows.add(new Object[]{category.getId(), role.getId(), null}));
+        teamMembers.forEach(member -> rows.add(new Object[]{category.getId(), null, member.getId()}));
+        jdbcBulkInserter.insert("category_permissions", List.of("category_id", "role_id", "member_id"), rows);
     }
 
-    // 소유자가 탈퇴했거나 팀이 삭제된 카테고리는 존재하지 않는 것으로 처리
+    // 소유자가 탈퇴했거나 정지(BANNED)됐거나 팀이 삭제된 카테고리는 존재하지 않는 것으로 처리
     @Transactional(readOnly = true)
     public Category getActiveCategory(Long categoryId) {
         Category category = categoryRepository.findWithOwnerById(categoryId).orElseThrow(
@@ -147,21 +145,11 @@ public class CategoryServiceImpl implements CategoryService {
         );
         boolean ownerDeleted = category.isTeamCategory()
                 ? category.getTeam().getDeletedAt() != null
-                : category.getUser().getDeletedAt() != null;
+                : category.getUser().getDeletedAt() != null || category.getUser().getStatus() == UserStatus.BANNED;
         if (ownerDeleted) {
             throw new CommonException(CategoryErrorCode.CATEGORY_NOT_FOUND);
         }
         return category;
-    }
-
-    private Set<Long> teamViewerIds(Category category) {
-        Set<Long> ids = new HashSet<>();
-        for (TeamMember member : teamMemberRepository.findAllWithUserByTeam(category.getTeam())) {
-            if (categoryAuthorityService.canView(category, member.getUser())) {
-                ids.add(member.getUser().getId());
-            }
-        }
-        return ids;
     }
 
     private Category getTeamCategoryForManage(User actor, Long categoryId) {
@@ -173,9 +161,8 @@ public class CategoryServiceImpl implements CategoryService {
         return category;
     }
 
-    private List<CategoryResponse> toResponses(List<Category> categories) {
-        return categories.stream()
-                .map(CategoryResponse::from)
-                .toList();
+    // 요청 page는 1부터 시작
+    private Pageable toPageable(int page, int size) {
+        return PageRequest.of(Math.max(page - 1, 0), Math.min(Math.max(size, 1), 100));
     }
 }

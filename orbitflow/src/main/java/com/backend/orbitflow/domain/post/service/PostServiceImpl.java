@@ -2,9 +2,8 @@ package com.backend.orbitflow.domain.post.service;
 
 import com.backend.orbitflow.domain.block.service.BlockService;
 import com.backend.orbitflow.domain.category.entity.Category;
-import com.backend.orbitflow.domain.comment.repository.CommentRepository;
-import com.backend.orbitflow.domain.like.repository.PostLikeRepository;
-import com.backend.orbitflow.domain.post.dto.PostCount;
+import com.backend.orbitflow.domain.comment.service.CommentService;
+import com.backend.orbitflow.domain.like.service.PostLikeService;
 import com.backend.orbitflow.domain.category.service.CategoryAuthorityService;
 import com.backend.orbitflow.domain.category.service.CategoryService;
 import com.backend.orbitflow.domain.post.dto.response.PostResponse;
@@ -16,13 +15,12 @@ import com.backend.orbitflow.domain.post.repository.PostRepository;
 import com.backend.orbitflow.domain.team.service.TeamAuthorityService;
 import com.backend.orbitflow.domain.todo.entity.Todo;
 import com.backend.orbitflow.domain.todo.error.TodoErrorCode;
-import com.backend.orbitflow.domain.todo.repository.TodoRepository;
+import com.backend.orbitflow.domain.todo.service.TodoService;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.global.common.error.exception.CommonException;
+import com.backend.orbitflow.global.util.JdbcBulkInserter;
 import com.backend.orbitflow.global.util.S3TransactionalFileManager;
-import com.backend.orbitflow.domain.notification.event.PostCreatedEvent;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -35,6 +33,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -47,15 +46,15 @@ public class PostServiceImpl implements PostService {
 
     private final PostRepository postRepository;
     private final PostImageRepository postImageRepository;
-    private final TodoRepository todoRepository;
+    private final TodoService todoService;
     private final CategoryService categoryService;
     private final CategoryAuthorityService categoryAuthorityService;
     private final TeamAuthorityService teamAuthorityService;
     private final BlockService blockService;
     private final S3TransactionalFileManager s3FileManager;
-    private final CommentRepository commentRepository;
-    private final PostLikeRepository postLikeRepository;
-    private final ApplicationEventPublisher eventPublisher;
+    private final CommentService commentService;
+    private final PostLikeService postLikeService;
+    private final JdbcBulkInserter jdbcBulkInserter;
 
     // 게시글을 조회할 수 있는 사용자만 댓글·대댓글·좋아요 가능
     @Transactional(readOnly = true)
@@ -66,7 +65,7 @@ public class PostServiceImpl implements PostService {
     }
 
     public PostResponse createPost(User actor, Long todoId, String content, List<MultipartFile> images) {
-        Todo todo = todoRepository.findWithAllById(todoId)
+        Todo todo = todoService.findTodo(todoId)
                 .filter(t -> !t.isDeleted())
                 .orElseThrow(() -> new CommonException(TodoErrorCode.TODO_NOT_FOUND));
         checkWrite(todo, actor);
@@ -77,7 +76,6 @@ public class PostServiceImpl implements PostService {
 
         Post post = postRepository.save(Post.of(todo, actor, content));
         List<PostImage> postImages = saveImages(post, s3FileManager.upload(IMAGE_DIR, files), 0);
-        eventPublisher.publishEvent(new PostCreatedEvent(post.getId()));
         // 팔로워 타임라인에는 조회 시점에 노출 (TimelineService)
         return PostResponse.of(post, postImages, 0, 0, false);
     }
@@ -92,14 +90,13 @@ public class PostServiceImpl implements PostService {
     // 투두가 삭제되어도 게시글은 조회 가능
     @Transactional(readOnly = true)
     public Page<PostResponse> getTodoPosts(User viewer, Long todoId, int page, int size) {
-        Todo todo = todoRepository.findWithAllById(todoId).orElseThrow(
+        Todo todo = todoService.findTodo(todoId).orElseThrow(
                 () -> new CommonException(TodoErrorCode.TODO_NOT_FOUND)
         );
         Category category = categoryService.getActiveCategory(todo.getCategory().getId());
-        if (!categoryAuthorityService.canView(category, viewer)) {
-            throw new CommonException(PostErrorCode.POST_ACCESS_DENIED);
-        }
-        return toResponses(postRepository.findAllByTodo(todo, viewer, toPageable(page, size)), viewer);
+        // 카테고리를 볼 수 없어도 단건 조회와 같이 본인이 작성한 게시글은 조회 가능
+        Long onlyAuthorId = categoryAuthorityService.canView(category, viewer) ? null : viewer.getId();
+        return toResponses(postRepository.findAllByTodo(todo, viewer, onlyAuthorId, toPageable(page, size)), viewer);
     }
 
     // 작성자의 게시글 중 viewer가 열람 가능한 카테고리의 게시글만
@@ -109,11 +106,11 @@ public class PostServiceImpl implements PostService {
         if (!viewer.getId().equals(author.getId()) && blockService.isBlocked(author, viewer)) {
             return Page.empty(pageable);
         }
-        Set<Long> viewableIds = viewableCategoryIds(viewer, postRepository.findCategoriesByAuthor(author));
-        if (viewableIds.isEmpty()) {
-            return Page.empty(pageable);
-        }
-        return toResponses(postRepository.findAllByAuthorAndCategoryIdIn(author, viewableIds, pageable), viewer);
+        // 열람 판정은 조회 쿼리에서 (목록 id 1 + 개수 1 + 본문 1 + 사진·좋아요·댓글 묶음 조회)
+        Page<Long> ids = postRepository.findViewableIdsByAuthor(author.getId(), viewer.getId(), pageable);
+        Map<Long, Post> posts = postRepository.findAllWithUserAndTodoByIdIn(ids.getContent()).stream()
+                .collect(Collectors.toMap(Post::getId, post -> post));
+        return toResponses(ids.map(posts::get), viewer);
     }
 
     // 유지할 사진을 요청 순서대로 두고 새 사진을 뒤에 추가, 빠진 사진은 커밋 후 S3에서 삭제
@@ -136,7 +133,9 @@ public class PostServiceImpl implements PostService {
         List<PostImage> removed = current.stream()
                 .filter(image -> !keepImageUrls.contains(image.getImageUrl()))
                 .toList();
-        postImageRepository.deleteAll(removed);
+        if (!removed.isEmpty()) {
+            postImageRepository.deleteAllInBatch(removed);
+        }
         s3FileManager.deleteAfterCommit(removed.stream().map(PostImage::getImageUrl).toList());
 
         List<PostImage> result = new ArrayList<>();
@@ -191,6 +190,12 @@ public class PostServiceImpl implements PostService {
         }
     }
 
+    // 열람 권한·작성자 상태와 무관하게 조회 (관리자 신고 처리 등 호출 측에서 판단)
+    @Transactional(readOnly = true)
+    public Optional<Post> findById(Long postId) {
+        return postRepository.findById(postId);
+    }
+
     // 탈퇴한 작성자의 게시글은 존재하지 않는 것으로 처리
     private Post getActivePost(Long postId) {
         return postRepository.findWithAllById(postId)
@@ -198,32 +203,13 @@ public class PostServiceImpl implements PostService {
                 .orElseThrow(() -> new CommonException(PostErrorCode.POST_NOT_FOUND));
     }
 
-    // 개인 카테고리는 소유자별, 팀 카테고리는 팀별로 열람 가능 여부 판정 (삭제된 팀·탈퇴한 소유자 제외)
-    private Set<Long> viewableCategoryIds(User viewer, List<Category> categories) {
-        Map<Long, List<Category>> personalByOwner = categories.stream()
-                .filter(category -> !category.isTeamCategory() && category.getUser().getDeletedAt() == null)
-                .collect(Collectors.groupingBy(category -> category.getUser().getId()));
-        Map<Long, List<Category>> teamByTeam = categories.stream()
-                .filter(category -> category.isTeamCategory() && category.getTeam().getDeletedAt() == null)
-                .collect(Collectors.groupingBy(category -> category.getTeam().getId()));
-
-        Set<Long> ids = new HashSet<>();
-        personalByOwner.values().forEach(group -> categoryAuthorityService
-                .filterViewablePersonal(group.get(0).getUser(), viewer, group)
-                .forEach(category -> ids.add(category.getId())));
-        teamByTeam.values().forEach(group -> categoryAuthorityService
-                .filterViewableTeam(group.get(0).getTeam(), viewer, group)
-                .forEach(category -> ids.add(category.getId())));
-        return ids;
-    }
-
     private PostResponse toResponse(Post post, List<PostImage> images, User viewer) {
         return PostResponse.of(
                 post,
                 images,
-                postLikeRepository.countByPost(post),
-                commentRepository.countByPost(post),
-                postLikeRepository.existsByPostAndUser(post, viewer)
+                postLikeService.countByPost(post, viewer),
+                commentService.countByPost(post, viewer),
+                postLikeService.isLiked(post, viewer)
         );
     }
 
@@ -232,25 +218,16 @@ public class PostServiceImpl implements PostService {
         return posts.map(post -> responses.get(post.getId()));
     }
 
-    // 열람 권한 검사는 호출 측 책임 (타임라인 등에서 이미 필터링된 게시글 변환용)
-    @Transactional(readOnly = true)
-    public List<PostResponse> toResponses(List<Post> posts, User viewer) {
-        Map<Long, PostResponse> responses = toResponseMap(posts, viewer);
-        return posts.stream()
-                .map(post -> responses.get(post.getId()))
-                .toList();
-    }
-
-    // 사진, 좋아요·댓글 수, 요청자의 좋아요 여부를 게시글 묶음 단위로 조회 (N+1 방지)
+    // 사진, 좋아요·댓글 수(목록과 같이 탈퇴한 사용자, 요청자와 차단 관계인 사용자 제외), 요청자의 좋아요 여부를 게시글 묶음 단위로 조회 (N+1 방지)
     private Map<Long, PostResponse> toResponseMap(List<Post> posts, User viewer) {
         if (posts.isEmpty()) {
             return Map.of();
         }
         Map<Long, List<PostImage>> imagesByPost = postImageRepository.findAllByPostInOrderBySortOrderAsc(posts).stream()
                 .collect(Collectors.groupingBy(image -> image.getPost().getId()));
-        Map<Long, Long> likeCounts = toCountMap(postLikeRepository.countByPostIn(posts));
-        Map<Long, Long> commentCounts = toCountMap(commentRepository.countByPostIn(posts));
-        Set<Long> likedIds = postLikeRepository.findLikedPostIds(posts, viewer);
+        Map<Long, Long> likeCounts = postLikeService.countByPostIn(posts, viewer);
+        Map<Long, Long> commentCounts = commentService.countByPostIn(posts, viewer);
+        Set<Long> likedIds = postLikeService.findLikedPostIds(posts, viewer);
         return posts.stream()
                 .collect(Collectors.toMap(Post::getId, post -> PostResponse.of(
                         post,
@@ -261,17 +238,17 @@ public class PostServiceImpl implements PostService {
                 )));
     }
 
-    private Map<Long, Long> toCountMap(List<PostCount> counts) {
-        return counts.stream()
-                .collect(Collectors.toMap(PostCount::postId, PostCount::count));
-    }
-
+    // 사진 수와 무관하게 INSERT 1회 (JDBC 배치), 응답에는 사진 URL만 쓰이고 이후 수정하지 않으므로 반환 엔티티는 영속 상태가 아님
     private List<PostImage> saveImages(Post post, List<String> urls, int startOrder) {
         List<PostImage> images = new ArrayList<>();
         for (int i = 0; i < urls.size(); i++) {
             images.add(PostImage.of(post, urls.get(i), startOrder + i));
         }
-        return postImageRepository.saveAll(images);
+        jdbcBulkInserter.insert("post_images", List.of("post_id", "image_url", "sort_order"),
+                images.stream()
+                        .map(image -> new Object[]{post.getId(), image.getImageUrl(), image.getSortOrder()})
+                        .toList());
+        return images;
     }
 
     private List<MultipartFile> nonEmpty(List<MultipartFile> files) {
@@ -285,6 +262,6 @@ public class PostServiceImpl implements PostService {
 
     // 요청 page는 1부터 시작
     private Pageable toPageable(int page, int size) {
-        return PageRequest.of(Math.max(page - 1, 0), size);
+        return PageRequest.of(Math.max(page - 1, 0), Math.min(Math.max(size, 1), 100));
     }
 }

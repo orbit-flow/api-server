@@ -39,9 +39,19 @@ public class UserReport extends BaseEntity {
     @Column(nullable = false)
     private ReportStatus status;
 
-    public static UserReport of(User reporter, Long reportedId, ReportContentType contentType, String reason) {
+    // 신고 시점의 대상 작성자 (USER 유형은 피신고자), 콘텐츠가 삭제되어도 제재 대상을 특정하기 위해 보관
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "reported_user_id", nullable = false)
+    private User reportedUser;
+
+    // 신고 시점의 대상 내용 (게시글·댓글 본문, 사용자 이름), 콘텐츠가 삭제되어도 증거로 남김
+    @Column(name = "target_snapshot", length = 500)
+    private String targetSnapshot;
+
+    public static UserReport of(User reporter, Long reportedId, ReportContentType contentType, String reason,
+                                User reportedUser, String targetSnapshot) {
         return new UserReport(
-                null, reporter, reportedId, contentType, reason, ReportStatus.RECEIVED
+                null, reporter, reportedId, contentType, reason, ReportStatus.RECEIVED, reportedUser, targetSnapshot
         );
     }
 

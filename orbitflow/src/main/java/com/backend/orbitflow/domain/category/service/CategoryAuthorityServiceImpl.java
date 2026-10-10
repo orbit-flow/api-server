@@ -5,6 +5,7 @@ import com.backend.orbitflow.domain.category.entity.Category;
 import com.backend.orbitflow.domain.category.enums.Visibility;
 import com.backend.orbitflow.domain.category.error.CategoryErrorCode;
 import com.backend.orbitflow.domain.category.repository.CategoryPermissionRepository;
+import com.backend.orbitflow.domain.category.repository.CategoryRepository;
 import com.backend.orbitflow.domain.follow.enums.FollowState;
 import com.backend.orbitflow.domain.follow.service.FollowService;
 import com.backend.orbitflow.domain.team.entity.Team;
@@ -17,14 +18,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
-import com.backend.orbitflow.domain.category.dto.CategoryGrant;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Map;
-import java.util.stream.Collectors;
 
 // 허용되지 않은 조회는 진입 경로와 무관하게 거부
 @Service
@@ -32,7 +31,10 @@ import java.util.stream.Collectors;
 @Transactional(readOnly = true)
 public class CategoryAuthorityServiceImpl implements CategoryAuthorityService {
 
+    private static final int FOLLOWER_CHUNK = 500;
+
     private final CategoryPermissionRepository categoryPermissionRepository;
+    private final CategoryRepository categoryRepository;
     private final TeamAuthorityService teamAuthorityService;
     private final FollowService followService;
     private final BlockService blockService;
@@ -42,35 +44,6 @@ public class CategoryAuthorityServiceImpl implements CategoryAuthorityService {
             return filterViewableTeam(category.getTeam(), viewer, List.of(category)).size() == 1;
         }
         return filterViewablePersonal(category.getUser(), viewer, List.of(category)).size() == 1;
-    }
-
-    // 한 팀의 여러 구성원 × 여러 카테고리 판정용 (팀 단위 쿼리 3회)
-    public TeamCategoryAccess teamAccess(Team team) {
-        Map<Long, Set<Long>> memberIds = new HashMap<>();
-        Map<Long, Set<Long>> roleIds = new HashMap<>();
-        for (CategoryGrant grant : categoryPermissionRepository.findGrantsByTeam(team)) {
-            if (grant.memberId() != null) {
-                memberIds.computeIfAbsent(grant.categoryId(), key -> new HashSet<>()).add(grant.memberId());
-            }
-            if (grant.roleId() != null) {
-                roleIds.computeIfAbsent(grant.categoryId(), key -> new HashSet<>()).add(grant.roleId());
-            }
-        }
-        return new TeamCategoryAccess(teamAuthorityService.snapshot(team), memberIds, roleIds);
-    }
-
-    // 한 사용자 × 여러 팀의 카테고리 판정용 (사용자 단위 쿼리 3회)
-    public ViewerTeamScope viewerScope(User viewer) {
-        Map<Long, Integer> masks = teamAuthorityService.getPermissionMasksByTeam(viewer);
-        Set<Long> managerTeamIds = masks.entrySet().stream()
-                .filter(entry -> TeamPermission.MANAGE_CATEGORIES.isGranted(entry.getValue()))
-                .map(Map.Entry::getKey)
-                .collect(Collectors.toSet());
-        return new ViewerTeamScope(
-                masks.keySet(),
-                managerTeamIds,
-                categoryPermissionRepository.findAllowedCategoryIdsByUser(viewer)
-        );
     }
 
     public void checkView(Category category, User viewer) {
@@ -130,5 +103,41 @@ public class CategoryAuthorityServiceImpl implements CategoryAuthorityService {
                         || canManage
                         || allowedIds.contains(category.getId()))
                 .toList();
+    }
+
+    // 팀 카테고리를 볼 수 있는 팀 구성원의 사용자 id (구성원마다 권한을 조회하지 않음)
+    public Set<Long> findViewerUserIds(Category teamCategory) {
+        return categoryRepository.findViewerUserIds(teamCategory.getId());
+    }
+
+    // 알림을 켠 팔로워 중 카테고리를 볼 수 있는 사용자 (id → uuid, 팔로워 500명 단위로 나눈 묶음, 조회 권한 쿼리는 최대 1회)
+    // 팔로워는 수락된 팔로우만 포함하고 차단 시 팔로우가 삭제되므로, 개인 카테고리는 공개 범위만으로 판정
+    // (팔로워는 FOLLOWER 범위를 볼 수 있고, 비밀계정의 PUBLIC도 FOLLOWER로 제한될 뿐이므로 PRIVATE만 제외)
+    public List<Map<Long, String>> findNotifiableViewers(Category category, User followee) {
+        List<Map<Long, String>> chunks = new ArrayList<>();
+        if (!category.isTeamCategory() && category.getVisibility() == Visibility.PRIVATE) {
+            return chunks;
+        }
+        // null이면 팔로워 전원이 조회 가능
+        Set<Long> viewerIds = category.isTeamCategory() && category.getVisibility() != Visibility.PUBLIC
+                ? findViewerUserIds(category)
+                : null;
+        long afterId = 0L;
+        while (true) {
+            Map<Long, String> followers = followService.findNotifiableFollowers(followee, afterId, FOLLOWER_CHUNK);
+            Map<Long, String> receivers = new LinkedHashMap<>();
+            for (Map.Entry<Long, String> follower : followers.entrySet()) {
+                afterId = follower.getKey();
+                if (viewerIds == null || viewerIds.contains(follower.getKey())) {
+                    receivers.put(follower.getKey(), follower.getValue());
+                }
+            }
+            if (!receivers.isEmpty()) {
+                chunks.add(receivers);
+            }
+            if (followers.size() < FOLLOWER_CHUNK) {
+                return chunks;
+            }
+        }
     }
 }

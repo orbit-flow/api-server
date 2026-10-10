@@ -106,8 +106,7 @@ public class SecurityConfig {
                 "Content-Type",
                 "Authorization",
                 "Accept",
-                "Origin",
-                "Refresh-Token"
+                "Origin"
         ));
 
         configuration.setAllowedMethods(List.of(
@@ -118,7 +117,6 @@ public class SecurityConfig {
 
         configuration.setExposedHeaders(List.of(
                 "Authorization",
-                "Refresh-Token",
                 "Content-Disposition"
         ));
 

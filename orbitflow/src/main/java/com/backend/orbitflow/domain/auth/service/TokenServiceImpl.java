@@ -6,6 +6,7 @@ import com.backend.orbitflow.global.common.error.exception.CommonException;
 import com.backend.orbitflow.global.security.JwtProvider;
 import com.backend.orbitflow.global.util.RedisUtil;
 import io.jsonwebtoken.ExpiredJwtException;
+import io.jsonwebtoken.JwtException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
@@ -45,8 +46,16 @@ public class TokenServiceImpl implements TokenService{
 
     @Override
     public String getUuidFromRefreshToken(String refreshToken) {
-        String uuid = jwtProvider.getUserInfoFromToken(refreshToken).getSubject();
-        if (!refreshToken.equals(getRefreshToken(uuid))) {
+        String uuid;
+        try {
+            uuid = jwtProvider.getUserInfoFromToken(refreshToken).getSubject();
+        } catch (JwtException | IllegalArgumentException e) {
+            throw new CommonException(AuthErrorCode.INVALID_REFRESH_TOKEN);
+        }
+        // 조회와 삭제를 한 번에 수행해 같은 refresh token의 동시 재발급을 막음 (불일치여도 저장된 토큰은 폐기)
+        String stored = redisUtil.getAndDeleteValues(JwtProvider.REFRESH_HEADER + uuid, String.class)
+                .orElseThrow(() -> new CommonException(AuthErrorCode.INVALID_REFRESH_TOKEN));
+        if (!refreshToken.equals(stored)) {
             throw new CommonException(AuthErrorCode.INVALID_REFRESH_TOKEN);
         }
         return uuid;
@@ -83,6 +92,8 @@ public class TokenServiceImpl implements TokenService{
             }
         } catch (ExpiredJwtException e) {
             log.info("이미 만료된 Access Token이므로 블랙리스트 등록을 스킵합니다.");
+        } catch (JwtException e) {
+            log.warn("유효하지 않은 Access Token이므로 블랙리스트 등록을 스킵합니다.", e);
         }
     }
 }

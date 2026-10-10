@@ -14,7 +14,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
+import com.backend.orbitflow.domain.chat.dto.response.ChatroomMemberResponse;
+import com.backend.orbitflow.global.common.dto.response.PageResponse;
 
 // 실시간 수신 : STOMP /ws 연결(CONNECT 헤더 Authorization: Bearer {token}) 후 /sub/chatrooms/{uuid} 구독
 @RestController
@@ -69,16 +70,34 @@ public class ChatController {
                 ));
     }
 
-    // 마지막 메시지 최신순, 안 읽은 메시지 수 포함
+    // 마지막 메시지 최신순, 안 읽은 메시지 수 포함 (참여자는 개수만, 목록은 /members)
     @GetMapping("/chatrooms")
-    public ResponseEntity<CommonResponse<List<ChatroomResponse>>> getMyChatrooms(
-            @AuthenticationPrincipal AuthUser authUser
+    public ResponseEntity<CommonResponse<PageResponse<ChatroomResponse>>> getMyChatrooms(
+            @AuthenticationPrincipal AuthUser authUser,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size
     ) {
         return ResponseEntity
                 .status(HttpStatus.OK)
                 .body(CommonResponse.success(
                         ChatSuccessCode.GET_CHATROOM_LIST,
-                        chatFacade.getMyChatrooms(authUser)
+                        chatFacade.getMyChatrooms(authUser, page, size)
+                ));
+    }
+
+    // 채팅방 참여자 (참여 순)
+    @GetMapping("/chatrooms/{chatroomUuid}/members")
+    public ResponseEntity<CommonResponse<PageResponse<ChatroomMemberResponse>>> getMembers(
+            @AuthenticationPrincipal AuthUser authUser,
+            @PathVariable String chatroomUuid,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size
+    ) {
+        return ResponseEntity
+                .status(HttpStatus.OK)
+                .body(CommonResponse.success(
+                        ChatSuccessCode.GET_CHATROOM_INFO,
+                        chatFacade.getMembers(authUser, chatroomUuid, page, size)
                 ));
     }
 
@@ -138,19 +157,20 @@ public class ChatController {
 
     // ---------- 메시지 ----------
 
-    // 최신순, beforeId 미지정 시 가장 최근부터 (이전 페이지는 마지막 메시지 id를 beforeId로 전달)
+    // 최신순 페이지, beforeId(선택)를 주면 그보다 오래된 메시지만 : 첫 조회의 최신 메시지 id + 1을 고정해 넘기면 새 메시지가 와도 페이지가 밀리지 않음
     @GetMapping("/chatrooms/{chatroomUuid}/messages")
-    public ResponseEntity<CommonResponse<List<MessageResponse>>> getMessages(
+    public ResponseEntity<CommonResponse<PageResponse<MessageResponse>>> getMessages(
             @AuthenticationPrincipal AuthUser authUser,
             @PathVariable String chatroomUuid,
             @RequestParam(required = false) Long beforeId,
+            @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "30") int size
     ) {
         return ResponseEntity
                 .status(HttpStatus.OK)
                 .body(CommonResponse.success(
                         ChatSuccessCode.GET_MESSAGE_LIST,
-                        chatFacade.getMessages(authUser, chatroomUuid, beforeId, size)
+                        chatFacade.getMessages(authUser, chatroomUuid, beforeId, page, size)
                 ));
     }
 

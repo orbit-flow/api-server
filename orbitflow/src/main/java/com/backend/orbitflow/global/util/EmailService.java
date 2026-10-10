@@ -5,7 +5,6 @@ import com.backend.orbitflow.global.error.GlobalErrorCode;
 
 
 import jakarta.mail.internet.MimeMessage;
-import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.scheduling.annotation.Async;
 import lombok.extern.slf4j.Slf4j;
@@ -14,8 +13,8 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
 
+// DB 작업이 없으므로 트랜잭션을 열지 않음 (SMTP 발송 동안 DB 커넥션 점유 방지)
 @Slf4j
-@Transactional
 @Service
 @RequiredArgsConstructor
 public class EmailService {

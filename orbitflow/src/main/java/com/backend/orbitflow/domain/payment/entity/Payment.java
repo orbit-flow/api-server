@@ -28,7 +28,7 @@ public class Payment extends BaseEntity {
     private String orderId;
 
     // PG 결제 키 (승인 시 저장)
-    @Column(name = "payment_key")
+    @Column(name = "payment_key", unique = true)
     private String paymentKey;
 
     // 결제 금액 (KRW)

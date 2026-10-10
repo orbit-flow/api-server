@@ -9,23 +9,22 @@ import com.backend.orbitflow.domain.avatar.error.AvatarErrorCode;
 import com.backend.orbitflow.domain.avatar.repository.AvatarRepository;
 import com.backend.orbitflow.domain.avatar.repository.UserItemRepository;
 import com.backend.orbitflow.domain.item.entity.Item;
-import com.backend.orbitflow.domain.item.error.ItemErrorCode;
-import com.backend.orbitflow.domain.item.repository.ItemRepository;
-import com.backend.orbitflow.domain.notification.event.ItemPurchasedEvent;
+import com.backend.orbitflow.domain.item.service.ItemService;
 import com.backend.orbitflow.domain.point.entity.PointTransaction;
 import com.backend.orbitflow.domain.point.enums.PointTransactionType;
 import com.backend.orbitflow.domain.point.service.PointLedger;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.global.common.error.exception.CommonException;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Collection;
-import java.util.List;
 import java.util.Set;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageRequest;
 
 @Service
 @RequiredArgsConstructor
@@ -34,10 +33,10 @@ public class AvatarServiceImpl implements AvatarService {
 
     private final AvatarRepository avatarRepository;
     private final UserItemRepository userItemRepository;
-    private final ItemRepository itemRepository;
+    private final ItemService itemService;
     private final PointLedger pointLedger;
-    private final ApplicationEventPublisher eventPublisher;
 
+    @Transactional(readOnly = true)
     public AvatarResponse getMyAvatar(User me) {
         Avatar avatar = getAvatar(me);
         return AvatarResponse.of(avatar, me, userItemRepository.findEquippedByAvatar(avatar), true);
@@ -50,10 +49,15 @@ public class AvatarServiceImpl implements AvatarService {
         return AvatarResponse.of(avatar, target, userItemRepository.findEquippedByAvatar(avatar), false);
     }
 
-    public List<UserItemResponse> getMyItems(User me) {
-        return userItemRepository.findAllWithItemByAvatar(getAvatar(me)).stream()
-                .map(UserItemResponse::from)
-                .toList();
+    @Transactional(readOnly = true)
+    public Page<UserItemResponse> getMyItems(User me, int page, int size) {
+        Pageable pageable = toPageable(page, size);
+        return userItemRepository.findAllWithItemByAvatar(getAvatar(me), pageable).map(UserItemResponse::from);
+    }
+
+    // 아이템 부위 변경 시 같은 부위 중복 장착 방지를 위해 모든 사용자의 장착 해제
+    public void unequipAllByItem(Item item) {
+        userItemRepository.unequipAllByItem(item);
     }
 
     @Transactional(readOnly = true)
@@ -71,9 +75,7 @@ public class AvatarServiceImpl implements AvatarService {
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public PurchaseResponse purchase(User me, Long itemId) {
         Avatar avatar = pointLedger.lock(me);
-        Item item = itemRepository.findById(itemId).orElseThrow(
-                () -> new CommonException(ItemErrorCode.ITEM_NOT_FOUND)
-        );
+        Item item = itemService.getItem(itemId);
         if (!item.isOnSale()) {
             throw new CommonException(AvatarErrorCode.ITEM_NOT_ON_SALE);
         }
@@ -81,15 +83,16 @@ public class AvatarServiceImpl implements AvatarService {
             throw new CommonException(AvatarErrorCode.ALREADY_OWNED_ITEM);
         }
         int price = item.getPrice();
-        PointTransaction transaction = pointLedger.withdraw(me, PointTransactionType.USE, price);
+        PointTransaction transaction = pointLedger.withdraw(avatar, me, PointTransactionType.USE, price);
         userItemRepository.save(UserItem.of(avatar, item));
-        eventPublisher.publishEvent(new ItemPurchasedEvent(me.getId(), item.getId(), price, transaction.getBalanceAfter()));
         return new PurchaseResponse(item.getId(), item.getName(), price, transaction.getBalanceAfter());
     }
 
     // 같은 부위에 장착된 아이템은 즉시 해제하고 새 아이템 장착
+    // 아바타 행 락을 먼저 잡고 장착 목록을 조회하므로 같은 부위 동시 장착이 직렬화됨 (락 순서는 구매와 동일)
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public UserItemResponse equip(User me, Long itemId) {
-        Avatar avatar = getAvatar(me);
+        Avatar avatar = pointLedger.lock(me);
         UserItem userItem = getOwnedItem(avatar, itemId);
         userItemRepository.findEquippedByAvatarAndType(avatar, userItem.getItem().getType()).stream()
                 .filter(equipped -> !equipped.getId().equals(userItem.getId()))
@@ -98,8 +101,9 @@ public class AvatarServiceImpl implements AvatarService {
         return UserItemResponse.from(userItem);
     }
 
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public UserItemResponse unequip(User me, Long itemId) {
-        UserItem userItem = getOwnedItem(getAvatar(me), itemId);
+        UserItem userItem = getOwnedItem(pointLedger.lock(me), itemId);
         userItem.unequip();
         return UserItemResponse.from(userItem);
     }
@@ -115,5 +119,10 @@ public class AvatarServiceImpl implements AvatarService {
         return userItemRepository.findByAvatarAndItemId(avatar, itemId).orElseThrow(
                 () -> new CommonException(AvatarErrorCode.NOT_OWNED_ITEM)
         );
+    }
+
+    // 요청 page는 1부터 시작
+    private Pageable toPageable(int page, int size) {
+        return PageRequest.of(Math.max(page - 1, 0), Math.min(Math.max(size, 1), 100));
     }
 }

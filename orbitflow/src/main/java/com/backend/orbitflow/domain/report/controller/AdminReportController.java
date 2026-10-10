@@ -13,6 +13,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import com.backend.orbitflow.domain.report.dto.response.ReportListResponse;
 
 // 플랫폼 관리자 전용 (SecurityConfig에서 /api/admin/** ROLE_ADMIN 제한)
 @RestController
@@ -24,7 +25,7 @@ public class AdminReportController {
 
     // status·contentType 미지정 시 전체
     @GetMapping
-    public ResponseEntity<CommonResponse<PageResponse<ReportResponse>>> searchReports(
+    public ResponseEntity<CommonResponse<PageResponse<ReportListResponse>>> searchReports(
             @RequestParam(required = false) ReportStatus status,
             @RequestParam(required = false) ReportContentType contentType,
             @RequestParam(defaultValue = "1") int page,

@@ -12,7 +12,11 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Collection;
 import java.util.List;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageRequest;
 
 // 역할 변경은 저장 즉시 적용 (권한은 요청마다 DB에서 판정하므로 별도 캐시 무효화 불필요)
 @Service
@@ -24,11 +28,10 @@ public class TeamRoleServiceImpl implements TeamRoleService {
     private final TeamAuthorityService teamAuthorityService;
 
     @Transactional(readOnly = true)
-    public List<TeamRoleResponse> getRoles(Team team, User me) {
+    public Page<TeamRoleResponse> getRoles(Team team, User me, int page, int size) {
+        Pageable pageable = toPageable(page, size);
         teamAuthorityService.getMember(team, me);
-        return teamRoleRepository.findAllByTeamOrderByPriorityDescIdAsc(team).stream()
-                .map(TeamRoleResponse::from)
-                .toList();
+        return teamRoleRepository.findAllByTeamOrderByPriorityDescIdAsc(team, pageable).map(TeamRoleResponse::from);
     }
 
     public TeamRoleResponse createRole(Team team, User actor, String name, String color, int priority, List<TeamPermission> permissions) {
@@ -69,9 +72,20 @@ public class TeamRoleServiceImpl implements TeamRoleService {
         return TeamRoleResponse.from(role);
     }
 
+    // 팀의 역할 중 roleIds에 해당하는 것 (한 번에 조회)
+    @Transactional(readOnly = true)
+    public List<TeamRole> findRoles(Team team, Collection<Long> roleIds) {
+        return roleIds.isEmpty() ? List.of() : teamRoleRepository.findAllByTeamAndIdIn(team, roleIds);
+    }
+
     private TeamRole getRole(Team team, Long roleId) {
         return teamRoleRepository.findByIdAndTeam(roleId, team).orElseThrow(
                 () -> new CommonException(TeamErrorCode.ROLE_NOT_FOUND)
         );
+    }
+
+    // 요청 page는 1부터 시작
+    private Pageable toPageable(int page, int size) {
+        return PageRequest.of(Math.max(page - 1, 0), Math.min(Math.max(size, 1), 100));
     }
 }

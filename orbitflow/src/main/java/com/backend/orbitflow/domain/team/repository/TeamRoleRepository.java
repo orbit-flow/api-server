@@ -7,10 +7,12 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 
 public interface TeamRoleRepository extends JpaRepository<TeamRole, Long> {
 
-    List<TeamRole> findAllByTeamOrderByPriorityDescIdAsc(Team team);
+    Page<TeamRole> findAllByTeamOrderByPriorityDescIdAsc(Team team, Pageable pageable);
 
     List<TeamRole> findAllByTeamAndIdIn(Team team, Collection<Long> ids);
 

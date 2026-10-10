@@ -13,7 +13,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
+import com.backend.orbitflow.global.common.dto.response.PageResponse;
+import org.springframework.web.bind.annotation.RequestParam;
 
 @RestController
 @RequiredArgsConstructor
@@ -49,14 +50,16 @@ public class AvatarController {
     }
 
     @GetMapping("/avatars/me/items")
-    public ResponseEntity<CommonResponse<List<UserItemResponse>>> getMyItems(
-            @AuthenticationPrincipal AuthUser authUser
+    public ResponseEntity<CommonResponse<PageResponse<UserItemResponse>>> getMyItems(
+            @AuthenticationPrincipal AuthUser authUser,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size
     ) {
         return ResponseEntity
                 .status(HttpStatus.OK)
                 .body(CommonResponse.success(
                         AvatarSuccessCode.GET_MY_ITEMS,
-                        avatarFacade.getMyItems(authUser)
+                        avatarFacade.getMyItems(authUser, page, size)
                 ));
     }
 

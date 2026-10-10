@@ -28,7 +28,16 @@ public class AvatarBackfillRunner implements ApplicationRunner {
             return;
         }
         // 사용자별 개별 트랜잭션 (PointLedger.createAvatar)
-        users.forEach(pointLedger::createAvatar);
-        log.info("기존 사용자 아바타 생성 완료: {}건", users.size());
+        // 다중 인스턴스 동시 기동 등으로 이미 생성된 경우(유니크 위반)는 건너뛰고 계속 진행
+        int created = 0;
+        for (User user : users) {
+            try {
+                pointLedger.createAvatar(user);
+                created++;
+            } catch (Exception e) {
+                log.warn("아바타 보정 실패, 건너뜀: userId={}, {}", user.getId(), e.getMessage());
+            }
+        }
+        log.info("기존 사용자 아바타 생성 완료: {}/{}건", created, users.size());
     }
 }

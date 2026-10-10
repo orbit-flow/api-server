@@ -9,4 +9,7 @@ public record EmailCodeRequest(
         @Email(message = "이메일을 입력해 주세요.")
         String email
 ){
+    public EmailCodeRequest {
+        email = email == null ? null : email.trim().toLowerCase();
+    }
 }

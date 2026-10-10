@@ -1,6 +1,5 @@
 package com.backend.orbitflow.domain.user.service;
 
-import java.util.List;
 import com.backend.orbitflow.global.common.error.exception.CommonException;
 import com.backend.orbitflow.domain.user.error.UserErrorCode;
 import com.backend.orbitflow.domain.user.entity.OAuthAccount;
@@ -13,6 +12,9 @@ import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageRequest;
 
 @Service
 @RequiredArgsConstructor
@@ -33,8 +35,9 @@ public class OAuthServiceImpl implements OAuthService{
     }
 
     @Transactional(readOnly = true)
-    public List<OAuthAccount> getLinkedAccounts(User user) {
-        return oAuthRepository.findAllByUserOrderByCreatedAtAsc(user);
+    public Page<OAuthAccount> getLinkedAccounts(User user, int page, int size) {
+        Pageable pageable = toPageable(page, size);
+        return oAuthRepository.findAllByUserOrderByCreatedAtAsc(user, pageable);
     }
 
     // 비밀번호가 있거나 다른 소셜 계정이 남아 있을 때만 해제 (로그인 수단이 없어지는 것 방지)
@@ -51,4 +54,8 @@ public class OAuthServiceImpl implements OAuthService{
         oAuthRepository.delete(account);
     }
 
+    // 요청 page는 1부터 시작
+    private Pageable toPageable(int page, int size) {
+        return PageRequest.of(Math.max(page - 1, 0), Math.min(Math.max(size, 1), 100));
+    }
 }

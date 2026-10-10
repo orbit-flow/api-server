@@ -1,7 +1,7 @@
 package com.backend.orbitflow.domain.team.service;
 
-import com.backend.orbitflow.domain.category.repository.CategoryPermissionRepository;
-import com.backend.orbitflow.domain.chat.repository.ChatroomMemberRepository;
+import com.backend.orbitflow.domain.category.service.CategoryService;
+import com.backend.orbitflow.domain.chat.service.ChatroomService;
 import com.backend.orbitflow.domain.team.dto.response.TeamResponse;
 import com.backend.orbitflow.domain.team.entity.Team;
 import com.backend.orbitflow.domain.team.entity.TeamMember;
@@ -20,8 +20,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.UUID;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.PageRequest;
 
 @Service
 @RequiredArgsConstructor
@@ -34,8 +36,8 @@ public class TeamServiceImpl implements TeamService {
     private final TeamMemberRoleRepository teamMemberRoleRepository;
     private final TeamInvitationRepository teamInvitationRepository;
     private final TeamAuthorityService teamAuthorityService;
-    private final CategoryPermissionRepository categoryPermissionRepository;
-    private final ChatroomMemberRepository chatroomMemberRepository;
+    private final CategoryService categoryService;
+    private final ChatroomService chatroomService;
 
     @Transactional(readOnly = true)
     public Team getActiveTeam(String uuid) {
@@ -58,8 +60,9 @@ public class TeamServiceImpl implements TeamService {
     }
 
     @Transactional(readOnly = true)
-    public List<TeamResponse> getMyTeams(User user) {
-        return teamRepository.findMyTeams(user);
+    public Page<TeamResponse> getMyTeams(User user, int page, int size) {
+        Pageable pageable = toPageable(page, size);
+        return teamRepository.findMyTeams(user, pageable);
     }
 
     // 비소속 사용자에게는 팀 존재 여부를 노출하지 않도록 NOT_FOUND 처리
@@ -82,15 +85,16 @@ public class TeamServiceImpl implements TeamService {
         Team team = getOwnedTeam(user, uuid);
         team.delete();
         teamMemberRoleRepository.deleteAllByTeam(team);
-        categoryPermissionRepository.deleteAllMemberPermissionsByTeam(team);
+        categoryService.deleteAllMemberPermissionsByTeam(team);
         teamMemberRepository.deleteAllByTeam(team);
         teamInvitationRepository.cancelAllPendingByTeam(team);
-        chatroomMemberRepository.deleteAllByTeam(team);
+        chatroomService.removeTeamChatroomMembers(team);
     }
 
     @Transactional(readOnly = true)
-    public List<Team> getDeletedTeams(User owner) {
-        return teamRepository.findAllByOwnerAndDeletedAtAfterOrderByDeletedAtDesc(owner, retentionThreshold());
+    public Page<Team> getDeletedTeams(User owner, int page, int size) {
+        Pageable pageable = toPageable(page, size);
+        return teamRepository.findAllByOwnerAndDeletedAtAfterOrderByDeletedAtDesc(owner, retentionThreshold(), pageable);
     }
 
     // 소유자만 다시 소속되며, 기존 구성원은 다시 초대해야 함
@@ -105,6 +109,12 @@ public class TeamServiceImpl implements TeamService {
         teamMemberRepository.save(TeamMember.of(team, user));
     }
 
+    // 삭제되지 않은 팀의 소유자인지 (회원 탈퇴 가능 여부 판단용)
+    @Transactional(readOnly = true)
+    public boolean ownsActiveTeam(User user) {
+        return teamRepository.existsByOwnerAndDeletedAtIsNull(user);
+    }
+
     private Team getOwnedTeam(User user, String uuid) {
         Team team = getActiveTeam(uuid);
         if (!team.isOwner(user)) {
@@ -115,5 +125,10 @@ public class TeamServiceImpl implements TeamService {
 
     private LocalDateTime retentionThreshold() {
         return LocalDateTime.now().minusDays(RETENTION_DAYS);
+    }
+
+    // 요청 page는 1부터 시작
+    private Pageable toPageable(int page, int size) {
+        return PageRequest.of(Math.max(page - 1, 0), Math.min(Math.max(size, 1), 100));
     }
 }

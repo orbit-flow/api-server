@@ -11,6 +11,7 @@ public record UserSignupRequest(
     @Email(message = "허용되지 않는 Email 입니다.")
     String email,
     
+    @NotBlank(message = "비밀번호는 비어있을 수 없습니다.")
     @Pattern(
         regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&])[A-Za-z\\d@$!%*?&]{8,20}$",
         message = "비밀번호는 8~20글자여야 하며, 대소문자, 숫자, 특수문자를 포함해야 합니다."
@@ -24,4 +25,7 @@ public record UserSignupRequest(
     @NotBlank(message = "이메일 인증 토큰을 입력해 주세요.")
     String emailVarifyToken
 ) {
+    public UserSignupRequest {
+        email = email == null ? null : email.trim().toLowerCase();
+    }
 }

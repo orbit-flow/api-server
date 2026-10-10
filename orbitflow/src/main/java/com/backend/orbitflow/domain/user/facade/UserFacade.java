@@ -2,7 +2,7 @@ package com.backend.orbitflow.domain.user.facade;
 
 import com.backend.orbitflow.domain.auth.service.AuthService;
 import com.backend.orbitflow.domain.auth.service.TokenService;
-import com.backend.orbitflow.domain.team.repository.TeamRepository;
+import com.backend.orbitflow.domain.team.service.TeamService;
 import com.backend.orbitflow.domain.user.dto.response.OAuthAccountResponse;
 import com.backend.orbitflow.domain.user.enums.Provider;
 import com.backend.orbitflow.domain.user.service.OAuthService;
@@ -27,6 +27,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.util.List;
+import com.backend.orbitflow.global.common.dto.response.PageResponse;
 
 @Slf4j
 @Component
@@ -42,7 +43,7 @@ public class UserFacade {
     private final S3Service s3Service;
     private final S3TransactionalFileManager s3FileManager;
     private final OAuthService oAuthService;
-    private final TeamRepository teamRepository;
+    private final TeamService teamService;
 
     // 기본 아바타·초기 포인트는 가입 트랜잭션에서 함께 생성 (UserRegisteredEvent)
     public UserResponse signup(UserSignupRequest request) {
@@ -112,10 +113,9 @@ public class UserFacade {
     }
 
     @Transactional(readOnly = true)
-    public List<OAuthAccountResponse> getOAuthAccounts(AuthUser authUser) {
-        return oAuthService.getLinkedAccounts(userService.getByUuid(authUser.getUuid())).stream()
-                .map(OAuthAccountResponse::from)
-                .toList();
+    public PageResponse<OAuthAccountResponse> getOAuthAccounts(AuthUser authUser, int page, int size) {
+        return PageResponse.from(oAuthService.getLinkedAccounts(userService.getByUuid(authUser.getUuid()), page, size)
+                .map(OAuthAccountResponse::from));
     }
 
     // 락 획득 후 확인(비밀번호 유무·남은 소셜 계정 수)이 동시 요청의 커밋을 보도록 READ COMMITTED (REPEATABLE READ 스냅샷 문제)
@@ -135,7 +135,7 @@ public class UserFacade {
     public void deleteUser(AuthUser authUser, UserDeleteRequest request) {
         User user = userService.getByUuid(authUser.getUuid());
         // 팀 소유자는 소유자 직함을 넘기거나 팀을 삭제한 뒤 탈퇴 (팀 탈퇴 정책과 동일)
-        if (teamRepository.existsByOwnerAndDeletedAtIsNull(user)) {
+        if (teamService.ownsActiveTeam(user)) {
             throw new CommonException(UserErrorCode.TEAM_OWNER_CANNOT_WITHDRAW);
         }
         if (user.getPassword() != null) {

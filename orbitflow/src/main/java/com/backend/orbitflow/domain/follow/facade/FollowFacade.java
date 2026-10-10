@@ -7,13 +7,17 @@ import com.backend.orbitflow.domain.follow.entity.Follow;
 import com.backend.orbitflow.domain.follow.enums.FollowState;
 import com.backend.orbitflow.domain.follow.error.FollowErrorCode;
 import com.backend.orbitflow.domain.follow.service.FollowService;
+import com.backend.orbitflow.domain.notification.enums.NotificationType;
+import com.backend.orbitflow.domain.notification.event.NotificationRequest;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.domain.user.service.UserService;
 import com.backend.orbitflow.global.common.dto.response.PageResponse;
 import com.backend.orbitflow.global.common.error.exception.CommonException;
 import com.backend.orbitflow.global.security.AuthUser;
 import lombok.RequiredArgsConstructor;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Transactional;
 
 @Component
 @RequiredArgsConstructor
@@ -22,7 +26,9 @@ public class FollowFacade {
     private final FollowService followService;
     private final UserService userService;
     private final BlockService blockService;
+    private final ApplicationEventPublisher eventPublisher;
 
+    @Transactional(readOnly = true)
     public PageResponse<FollowListResponse> getFollowing(AuthUser authUser, String uuid, int page, int size, String keyword) {
         User me = userService.getByUuid(authUser.getUuid());
         User target = userService.getByUuid(uuid);
@@ -30,6 +36,7 @@ public class FollowFacade {
         return PageResponse.from(followService.getFollowings(me, target, page, size, keyword));
     }
 
+    @Transactional(readOnly = true)
     public PageResponse<FollowListResponse> getFollower(AuthUser authUser, String uuid, int page, int size, String keyword) {
         User me = userService.getByUuid(authUser.getUuid());
         User target = userService.getByUuid(uuid);
@@ -37,6 +44,7 @@ public class FollowFacade {
         return PageResponse.from(followService.getFollowers(me, target, page, size, keyword));
     }
 
+    @Transactional(readOnly = true)
     public PageResponse<FollowListResponse> getFollowRequests(AuthUser authUser, int page, int size, String keyword) {
         User me = userService.getByUuid(authUser.getUuid());
         return PageResponse.from(followService.getFollowRequests(me, page, size, keyword));
@@ -56,12 +64,20 @@ public class FollowFacade {
         if (follow == null) {
             return FollowResponse.notFollow(target.getUuid());
         }
+        // 팔로우·팔로우 요청 활동은 대상 사용자에게
+        String content = follow.isPending()
+                ? me.getName() + "님이 팔로우를 요청했습니다."
+                : me.getName() + "님이 회원님을 팔로우하기 시작했습니다.";
+        eventPublisher.publishEvent(NotificationRequest.to(target, NotificationType.SOCIAL, me, follow.getId(), null, content));
         return FollowResponse.of(follow.getId(), target.getUuid(), follow.getState());
     }
 
     public FollowResponse acceptFollow(AuthUser authUser, Long followId) {
         User me = userService.getByUuid(authUser.getUuid());
         Follow follow = followService.acceptFollow(me, followId);
+        // 비밀계정 팔로우 요청이 승인되면 요청자에게 (거절은 고지하지 않음)
+        eventPublisher.publishEvent(NotificationRequest.to(follow.getFollower(), NotificationType.SOCIAL, me, follow.getId(), null,
+                me.getName() + "님이 팔로우 요청을 수락했습니다."));
         return FollowResponse.of(follow.getId(), follow.getFollower().getUuid(), follow.getState());
     }
 

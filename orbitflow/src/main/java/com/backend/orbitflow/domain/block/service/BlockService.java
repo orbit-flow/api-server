@@ -11,6 +11,8 @@ public interface BlockService {
 
     boolean isBlocked(User a, User b);
     Set<Long> findBlockedUserIdsAmong(User user, Collection<Long> userIds);
+    Set<Long> findBlockeeIds(User blocker);
+    boolean existsBlockAmong(Collection<Long> targetIds, Collection<Long> allIds);
     Page<BlockListResponse> getBlockList(User blocker, int page, int size, String keyword);
     Block toggleBlock(User blocker, User blockee);
 }

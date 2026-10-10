@@ -13,6 +13,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
+import com.backend.orbitflow.domain.report.dto.response.ReportListResponse;
 
 @RestController
 @RequiredArgsConstructor
@@ -36,7 +37,7 @@ public class ReportController {
 
     // 내가 접수한 신고와 처리 상태
     @GetMapping("/me")
-    public ResponseEntity<CommonResponse<PageResponse<ReportResponse>>> getMyReports(
+    public ResponseEntity<CommonResponse<PageResponse<ReportListResponse>>> getMyReports(
             @AuthenticationPrincipal AuthUser authUser,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "10") int size

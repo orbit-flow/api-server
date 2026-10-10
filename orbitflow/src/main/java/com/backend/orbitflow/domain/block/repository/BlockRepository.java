@@ -57,4 +57,12 @@ public interface BlockRepository extends JpaRepository<Block, Long> {
                or (b.blockee = :user and b.blocker.id in :userIds)
             """)
     Set<Long> findBlockedUserIdsAmong(@Param("user") User user, @Param("userIds") Collection<Long> userIds);
+
+    // targetIds 중 누구든 allIds(targetIds 포함) 중 누구와 어느 방향으로든 차단 관계이면 true (다수 참여 대화 구성원 간 차단 검증용)
+    @Query("""
+            select count(b) > 0 from Block b
+            where (b.blocker.id in :targetIds and b.blockee.id in :allIds)
+               or (b.blockee.id in :targetIds and b.blocker.id in :allIds)
+            """)
+    boolean existsBlockAmong(@Param("targetIds") Collection<Long> targetIds, @Param("allIds") Collection<Long> allIds);
 }

@@ -23,6 +23,7 @@ public class BlockFacade {
     private final UserService userService;
     private final FollowService followService;
 
+    @Transactional(readOnly = true)
     public PageResponse<BlockListResponse> getBlockList(AuthUser authUser, int page, int size, String keyword) {
         return PageResponse.from(
                 blockService.getBlockList(

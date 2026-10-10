@@ -12,5 +12,7 @@ public record UserEmailUpdateRequest(
     @NotBlank(message = "이메일 인증 토큰을 입력해 주세요.")
     String emailVarifyToken
 ) {
-
+    public UserEmailUpdateRequest {
+        email = email == null ? null : email.trim().toLowerCase();
+    }
 }

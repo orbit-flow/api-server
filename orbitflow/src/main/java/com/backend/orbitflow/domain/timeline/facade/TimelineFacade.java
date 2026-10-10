@@ -7,6 +7,7 @@ import com.backend.orbitflow.global.security.AuthUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
+import com.backend.orbitflow.global.common.dto.response.PageResponse;
 
 @Component
 @RequiredArgsConstructor
@@ -16,7 +17,7 @@ public class TimelineFacade {
     private final UserService userService;
 
     @Transactional(readOnly = true)
-    public TimelineResponse getTimeline(AuthUser authUser, String cursor, int size) {
-        return timelineService.getTimeline(userService.getByUuid(authUser.getUuid()), cursor, size);
+    public PageResponse<TimelineResponse> getTimeline(AuthUser authUser, int page, int size) {
+        return PageResponse.from(timelineService.getTimeline(userService.getByUuid(authUser.getUuid()), page, size));
     }
 }

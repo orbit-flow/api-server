@@ -10,7 +10,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.util.List;
+import com.backend.orbitflow.global.common.dto.response.PageResponse;
 
 @Component
 @RequiredArgsConstructor
@@ -21,11 +21,12 @@ public class TeamRoleFacade {
     private final UserService userService;
 
     @Transactional(readOnly = true)
-    public List<TeamRoleResponse> getRoles(AuthUser authUser, String teamUuid) {
-        return teamRoleService.getRoles(
+    public PageResponse<TeamRoleResponse> getRoles(AuthUser authUser, String teamUuid, int page, int size) {
+        return PageResponse.from(teamRoleService.getRoles(
                 teamService.getActiveTeam(teamUuid),
-                userService.getByUuid(authUser.getUuid())
-        );
+                userService.getByUuid(authUser.getUuid()),
+                page, size
+        ));
     }
 
     @Transactional

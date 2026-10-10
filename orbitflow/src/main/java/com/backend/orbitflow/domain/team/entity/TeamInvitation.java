@@ -11,12 +11,17 @@ import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.time.LocalDateTime;
+
 @Entity
 @Getter
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @Table(name = "team_invitations")
 public class TeamInvitation extends BaseEntity {
+
+    // 대기 중인 초대는 생성 후 7일이 지나면 만료 (상태 컬럼은 PENDING 그대로, 조회·수락 시점에 판단)
+    public static final int EXPIRATION_DAYS = 7;
 
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
@@ -40,7 +45,7 @@ public class TeamInvitation extends BaseEntity {
     @Column(nullable = false, unique = true, length = 36)
     private String uuid;
 
-    // 초대 링크(이메일 등) 검증용 토큰
+    // 현재 검증·노출에 사용하지 않음 (기존 DB의 NOT NULL 컬럼 유지를 위해 생성 시 값만 채움)
     @Column(nullable = false)
     private String token;
 
@@ -56,6 +61,10 @@ public class TeamInvitation extends BaseEntity {
 
     public boolean isPending() {
         return this.status == TeamInvitationStatus.PENDING;
+    }
+
+    public boolean isExpired() {
+        return !this.getCreatedAt().plusDays(EXPIRATION_DAYS).isAfter(LocalDateTime.now());
     }
 
     public boolean isInvitee(User user) {

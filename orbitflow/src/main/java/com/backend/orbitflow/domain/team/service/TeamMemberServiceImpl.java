@@ -1,6 +1,6 @@
 package com.backend.orbitflow.domain.team.service;
 
-import com.backend.orbitflow.domain.chat.repository.ChatroomMemberRepository;
+import com.backend.orbitflow.domain.chat.service.ChatroomService;
 import com.backend.orbitflow.domain.team.dto.response.TeamMemberResponse;
 import com.backend.orbitflow.domain.team.entity.Team;
 import com.backend.orbitflow.domain.team.entity.TeamMember;
@@ -9,15 +9,12 @@ import com.backend.orbitflow.domain.team.entity.TeamRole;
 import com.backend.orbitflow.domain.team.enums.TeamPermission;
 import com.backend.orbitflow.domain.team.error.TeamErrorCode;
 import com.backend.orbitflow.domain.team.repository.TeamMemberRepository;
+import com.backend.orbitflow.domain.todo.service.TodoTransferService;
 import com.backend.orbitflow.domain.team.repository.TeamMemberRoleRepository;
 import com.backend.orbitflow.domain.team.repository.TeamRoleRepository;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.global.common.error.exception.CommonException;
-import com.backend.orbitflow.domain.notification.event.TeamJoinedEvent;
-import com.backend.orbitflow.domain.notification.event.TeamLeftEvent;
-import com.backend.orbitflow.domain.notification.event.TeamRoleChangedEvent;
 import lombok.RequiredArgsConstructor;
-import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,32 +23,48 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
+import com.backend.orbitflow.domain.team.dto.response.TeamRoleResponse;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import com.backend.orbitflow.global.util.JdbcBulkInserter;
+import org.springframework.data.domain.PageRequest;
 
 @Service
 @RequiredArgsConstructor
 @Transactional
 public class TeamMemberServiceImpl implements TeamMemberService {
 
+    private final JdbcBulkInserter jdbcBulkInserter;
     private final TeamMemberRepository teamMemberRepository;
     private final TeamRoleRepository teamRoleRepository;
     private final TeamMemberRoleRepository teamMemberRoleRepository;
     private final TeamAuthorityService teamAuthorityService;
-    private final TeamTodoInheritanceService teamTodoInheritanceService;
-    private final ChatroomMemberRepository chatroomMemberRepository;
-    private final ApplicationEventPublisher eventPublisher;
+    private final TodoTransferService todoTransferService;
+    private final ChatroomService chatroomService;
 
     @Transactional(readOnly = true)
-    public List<TeamMemberResponse> getMembers(Team team, User me) {
+    // 구성원 페이지 + 페이지 구성원들의 역할을 한 번에 조회 (쿼리 3회 : 목록, 개수, 역할)
+    public Page<TeamMemberResponse> getMembers(Team team, User me, int page, int size) {
+        Pageable pageable = toPageable(page, size);
         teamAuthorityService.getMember(team, me);
-        List<TeamMember> members = teamMemberRepository.findAllWithUserByTeam(team);
-        Map<Long, List<TeamRole>> rolesByMember = teamMemberRoleRepository.findAllWithRoleByMemberIn(members).stream()
+        Page<TeamMember> members = teamMemberRepository.findPageWithUserByTeam(team, pageable);
+        if (members.isEmpty()) {
+            return members.map(member -> toResponse(team, member, List.of()));
+        }
+        Map<Long, List<TeamRole>> rolesByMember = teamMemberRoleRepository.findAllWithRoleByMemberIn(members.getContent()).stream()
                 .collect(Collectors.groupingBy(
                         memberRole -> memberRole.getMember().getId(),
                         Collectors.mapping(TeamMemberRole::getRole, Collectors.toList())
                 ));
-        return members.stream()
-                .map(member -> toResponse(team, member, rolesByMember.getOrDefault(member.getId(), List.of())))
-                .toList();
+        return members.map(member -> toResponse(team, member, rolesByMember.getOrDefault(member.getId(), List.of())));
+    }
+
+    // 구성원 한 명의 전체 역할 (팀 구성원만 조회 가능)
+    @Transactional(readOnly = true)
+    public Page<TeamRoleResponse> getMemberRoles(Team team, User me, User target, int page, int size) {
+        Pageable pageable = toPageable(page, size);
+        teamAuthorityService.getMember(team, me);
+        return teamMemberRoleRepository.findRolesByMember(getTargetMember(team, target), pageable).map(TeamRoleResponse::from);
     }
 
     @Transactional(readOnly = true)
@@ -72,20 +85,18 @@ public class TeamMemberServiceImpl implements TeamMemberService {
         }
         TeamMember member = teamMemberRepository.save(TeamMember.of(team, user));
         teamMemberRoleRepository.save(TeamMemberRole.of(member, getOrCreateDefaultRole(team)));
-        eventPublisher.publishEvent(new TeamJoinedEvent(team.getId(), user.getId()));
     }
 
     // 탈퇴 즉시 팀 카테고리·투두 접근 불가, 소유자는 위임 후에만 탈퇴 가능
-    public void leaveTeam(Team team, User me) {
+    public Map<Long, Integer> leaveTeam(Team team, User me) {
         if (team.isOwner(me)) {
             throw new CommonException(TeamErrorCode.OWNER_CANNOT_LEAVE);
         }
-        removeMember(team, teamAuthorityService.getMember(team, me));
-        eventPublisher.publishEvent(new TeamLeftEvent(team.getId(), me.getId(), false));
+        return removeMember(team, teamAuthorityService.getMember(team, me));
     }
 
     // 소유자가 아니면 자신이 보유하지 않은 권한을 가진 구성원은 추방할 수 없음
-    public void kickMember(Team team, User actor, User target) {
+    public Map<Long, Integer> kickMember(Team team, User actor, User target) {
         teamAuthorityService.checkPermission(team, actor, TeamPermission.MANAGE_MEMBERS);
         if (actor.getId().equals(target.getId())) {
             throw new CommonException(TeamErrorCode.SELF_KICK);
@@ -95,8 +106,7 @@ public class TeamMemberServiceImpl implements TeamMemberService {
         }
         TeamMember targetMember = getTargetMember(team, target);
         teamAuthorityService.checkGrantable(team, actor, teamAuthorityService.getPermissionMask(team, targetMember));
-        removeMember(team, targetMember);
-        eventPublisher.publishEvent(new TeamLeftEvent(team.getId(), target.getId(), true));
+        return removeMember(team, targetMember);
     }
 
     // 요청한 역할 목록으로 교체, 추가·제거되는 역할의 권한은 모두 요청자가 보유해야 함
@@ -131,13 +141,12 @@ public class TeamMemberServiceImpl implements TeamMemberService {
         }
         teamAuthorityService.checkGrantable(team, actor, changedMask);
 
-        teamMemberRoleRepository.deleteAll(removed);
-        teamMemberRoleRepository.saveAll(added.stream()
-                .map(role -> TeamMemberRole.of(targetMember, role))
-                .toList());
-        if (!removed.isEmpty() || !added.isEmpty()) {
-            eventPublisher.publishEvent(new TeamRoleChangedEvent(team.getId(), target.getId()));
+        // 변경된 역할 수와 무관하게 DELETE 1회 + INSERT 1회
+        if (!removed.isEmpty()) {
+            teamMemberRoleRepository.deleteAllInBatch(removed);
         }
+        jdbcBulkInserter.insert("team_member_roles", List.of("member_id", "role_id"),
+                added.stream().map(role -> new Object[]{targetMember.getId(), role.getId()}).toList());
         return toResponse(team, targetMember, requestedRoles);
     }
 
@@ -158,12 +167,13 @@ public class TeamMemberServiceImpl implements TeamMemberService {
         );
     }
 
-    // 담당하던 미완료 팀 투두는 카테고리를 볼 수 있는 구성원 중 권한이 가장 낮은 구성원이 상속 (TeamTodoInheritanceService)
+    // 담당하던 미완료 팀 투두는 카테고리를 볼 수 있는 구성원 중 권한이 가장 낮은 구성원이 상속 (TodoTransferService)
     // 역할 부여·개별 열람 권한은 DB가 연쇄 삭제
-    private void removeMember(Team team, TeamMember member) {
-        teamTodoInheritanceService.inherit(team, member.getUser());
-        chatroomMemberRepository.deleteAllByTeamAndUser(team, member.getUser());
+    private Map<Long, Integer> removeMember(Team team, TeamMember member) {
+        Map<Long, Integer> inherited = todoTransferService.inherit(team, member.getUser());
+        chatroomService.leaveTeamChatrooms(team, member.getUser());
         teamMemberRepository.deleteById(member.getId());
+        return inherited;
     }
 
     // 역할 기능 이전에 생성된 팀은 기본 역할이 없으므로 최초 사용 시 생성
@@ -185,5 +195,10 @@ public class TeamMemberServiceImpl implements TeamMemberService {
                 .mapToInt(TeamRole::getPermissionsMask)
                 .reduce(0, (a, b) -> a | b);
         return TeamMemberResponse.of(member, owner, roles, mask);
+    }
+
+    // 요청 page는 1부터 시작
+    private Pageable toPageable(int page, int size) {
+        return PageRequest.of(Math.max(page - 1, 0), Math.min(Math.max(size, 1), 100));
     }
 }

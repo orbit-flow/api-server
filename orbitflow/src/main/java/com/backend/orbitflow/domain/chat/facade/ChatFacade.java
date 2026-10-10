@@ -14,6 +14,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import com.backend.orbitflow.domain.chat.dto.response.ChatroomMemberResponse;
+import com.backend.orbitflow.global.common.dto.response.PageResponse;
 
 @Component
 @RequiredArgsConstructor
@@ -55,8 +57,13 @@ public class ChatFacade {
     }
 
     @Transactional(readOnly = true)
-    public List<ChatroomResponse> getMyChatrooms(AuthUser authUser) {
-        return chatroomService.getMyChatrooms(me(authUser));
+    public PageResponse<ChatroomResponse> getMyChatrooms(AuthUser authUser, int page, int size) {
+        return PageResponse.from(chatroomService.getMyChatrooms(me(authUser), page, size));
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<ChatroomMemberResponse> getMembers(AuthUser authUser, String chatroomUuid, int page, int size) {
+        return PageResponse.from(chatroomService.getMembers(me(authUser), chatroomUuid, page, size));
     }
 
     @Transactional(readOnly = true)
@@ -65,8 +72,8 @@ public class ChatFacade {
     }
 
     @Transactional(readOnly = true)
-    public List<MessageResponse> getMessages(AuthUser authUser, String chatroomUuid, Long beforeId, int size) {
-        return messageService.getMessages(me(authUser), chatroomUuid, beforeId, size);
+    public PageResponse<MessageResponse> getMessages(AuthUser authUser, String chatroomUuid, Long beforeId, int page, int size) {
+        return PageResponse.from(messageService.getMessages(me(authUser), chatroomUuid, beforeId, page, size));
     }
 
     @Transactional
@@ -84,9 +91,6 @@ public class ChatFacade {
     }
 
     private List<User> users(List<String> uuids) {
-        return uuids.stream()
-                .distinct()
-                .map(userService::getByUuid)
-                .toList();
+        return userService.getAllByUuids(uuids);
     }
 }

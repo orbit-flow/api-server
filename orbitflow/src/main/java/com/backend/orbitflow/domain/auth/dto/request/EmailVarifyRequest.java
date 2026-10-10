@@ -10,7 +10,11 @@ public record EmailVarifyRequest(
         @Email(message = "이메일을 입력해 주세요.")
         String email,
 
+        @NotBlank(message = "인증 코드는 비어있을 수 없습니다.")
         @Pattern(regexp = "\\d{6}")
         String code
 ) {
+    public EmailVarifyRequest {
+        email = email == null ? null : email.trim().toLowerCase();
+    }
 }

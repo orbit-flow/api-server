@@ -17,8 +17,12 @@ import lombok.NoArgsConstructor;
 @Getter
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
+// (user_id, created_at) : 사용자별 목록·안 읽은 수, (created_at) : 만료 알림 일괄 삭제 (user_id 조건이 없어 앞 인덱스를 쓰지 못함)
 @Table(name = "notifications",
-        indexes = @Index(columnList = "user_id, created_at"))
+        indexes = {
+                @Index(columnList = "user_id, created_at"),
+                @Index(columnList = "created_at")
+        })
 public class Notification extends BaseEntity {
 
     @Id @GeneratedValue(strategy = GenerationType.IDENTITY)

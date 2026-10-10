@@ -1,12 +1,12 @@
 package com.backend.orbitflow.domain.user.service;
 
 import com.backend.orbitflow.domain.auth.error.AuthErrorCode;
+import com.backend.orbitflow.domain.auth.service.AuthService;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.domain.user.enums.UserRole;
 import com.backend.orbitflow.domain.user.enums.UserStatus;
 import com.backend.orbitflow.domain.user.error.UserErrorCode;
 import com.backend.orbitflow.global.common.error.exception.CommonException;
-import com.backend.orbitflow.global.util.RedisUtil;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
@@ -14,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import com.backend.orbitflow.domain.user.repository.UserRepository;
 
 import com.backend.orbitflow.domain.user.event.UserRegisteredEvent;
+import com.backend.orbitflow.domain.user.event.UserWithdrawnEvent;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 
@@ -22,6 +23,10 @@ import jakarta.persistence.LockModeType;
 import java.time.LocalDateTime;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -32,7 +37,7 @@ public class UserServiceImpl implements UserService{
     private static final int DORMANT_MONTHS = 12;
 
     private final UserRepository userRepository;
-    private final RedisUtil redisUtil;
+    private final AuthService authService;
     private final ApplicationEventPublisher eventPublisher;
     private final EntityManager entityManager;
 
@@ -41,6 +46,21 @@ public class UserServiceImpl implements UserService{
         return userRepository.findByUuidAndDeletedAtIsNullAndStatusNot(uuid, UserStatus.BANNED).orElseThrow(
                 () -> new CommonException(UserErrorCode.USER_NOT_FOUND)
         );
+    }
+
+    // uuid 목록을 한 번에 조회 (요청 순서 유지, 중복 제거), 하나라도 없으면 USER_NOT_FOUND
+    @Transactional(readOnly = true)
+    public List<User> getAllByUuids(Collection<String> uuids) {
+        List<String> distinct = uuids.stream().distinct().toList();
+        if (distinct.isEmpty()) {
+            return List.of();
+        }
+        Map<String, User> byUuid = userRepository.findAllByUuidInAndDeletedAtIsNullAndStatusNot(distinct, UserStatus.BANNED).stream()
+                .collect(Collectors.toMap(User::getUuid, user -> user));
+        if (byUuid.size() != distinct.size()) {
+            throw new CommonException(UserErrorCode.USER_NOT_FOUND);
+        }
+        return distinct.stream().map(byUuid::get).toList();
     }
 
     // 정지 계정 포함 조회 (관리자 정지 처리용)
@@ -63,6 +83,12 @@ public class UserServiceImpl implements UserService{
         return userRepository.findByEmail(email);
     }
 
+    // 탈퇴·정지 여부와 무관하게 조회 (상태 판단은 호출 측)
+    @Transactional(readOnly = true)
+    public Optional<User> findById(Long id) {
+        return userRepository.findById(id);
+    }
+
     // 비밀번호 분실 재설정 : 이메일 소유가 확인되었으므로 휴면 상태도 함께 해제
     // 탈퇴 유예 중인 계정은 재설정 후 로그인하면 복구되고, 정지 계정은 재설정해도 로그인이 제한됨
     public User resetPassword(String uuid, String encodedPassword) {
@@ -81,13 +107,7 @@ public class UserServiceImpl implements UserService{
         if (userRepository.findByEmail(email).isPresent()) {
             throw new CommonException(UserErrorCode.EMAIL_DUPLICATE);
         }
-        String code = redisUtil.getValues(email, String.class).orElseThrow(
-                () -> new CommonException(UserErrorCode.UN_VARIFIED_EMAIL)
-        );
-        if (!code.equals(varifyToken)) {
-            throw new CommonException(UserErrorCode.UN_VARIFIED_EMAIL);
-        }
-        redisUtil.deleteValues(email);
+        authService.consumeVerifyToken(email, varifyToken);
         User user = User.of(
                 UUID.randomUUID().toString().replace("-", ""),
                 email,
@@ -130,13 +150,7 @@ public class UserServiceImpl implements UserService{
         if (userRepository.findByEmail(email).isPresent()) {
             throw new CommonException(UserErrorCode.EMAIL_DUPLICATE);
         }
-        String token = redisUtil.getValues(email, String.class).orElseThrow(
-                () -> new CommonException(UserErrorCode.UN_VARIFIED_EMAIL)
-        );
-        if (!token.equals(varifyToken)) {
-            throw new CommonException(UserErrorCode.UN_VARIFIED_EMAIL);
-        }
-        redisUtil.deleteValues(email);
+        authService.consumeVerifyToken(email, varifyToken);
         User user = getByUuid(uuid);
         user.updateEmail(email);
         return userRepository.save(user);
@@ -181,6 +195,7 @@ public class UserServiceImpl implements UserService{
         User user = getByUuid(uuid);
         user.delete();
         userRepository.save(user);
+        eventPublisher.publishEvent(new UserWithdrawnEvent(uuid));
     }
 
     // 탈퇴 유예 기간(30일) 내 로그인 시 계정 복구, 기간이 지났으면 존재하지 않는 계정으로 처리

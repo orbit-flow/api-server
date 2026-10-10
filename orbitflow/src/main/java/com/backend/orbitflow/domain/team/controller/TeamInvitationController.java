@@ -13,7 +13,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
-import java.util.List;
+import com.backend.orbitflow.global.common.dto.response.PageResponse;
+import org.springframework.web.bind.annotation.RequestParam;
 
 @RestController
 @RequiredArgsConstructor
@@ -40,15 +41,17 @@ public class TeamInvitationController {
 
     // 팀이 보낸 대기 중인 초대 목록
     @GetMapping("/teams/{teamUuid}/invitations")
-    public ResponseEntity<CommonResponse<List<TeamInvitationResponse>>> getTeamInvitations(
+    public ResponseEntity<CommonResponse<PageResponse<TeamInvitationResponse>>> getTeamInvitations(
             @AuthenticationPrincipal AuthUser authUser,
-            @PathVariable String teamUuid
+            @PathVariable String teamUuid,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size
     ) {
         return ResponseEntity
                 .status(HttpStatus.OK)
                 .body(CommonResponse.success(
                         TeamSuccessCode.GET_INVITATION_LIST,
-                        teamInvitationFacade.getTeamInvitations(authUser, teamUuid)
+                        teamInvitationFacade.getTeamInvitations(authUser, teamUuid, page, size)
                 ));
     }
 
@@ -70,14 +73,16 @@ public class TeamInvitationController {
 
     // 내가 받은 대기 중인 초대 목록
     @GetMapping("/team-invitations")
-    public ResponseEntity<CommonResponse<List<TeamInvitationResponse>>> getMyInvitations(
-            @AuthenticationPrincipal AuthUser authUser
+    public ResponseEntity<CommonResponse<PageResponse<TeamInvitationResponse>>> getMyInvitations(
+            @AuthenticationPrincipal AuthUser authUser,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "20") int size
     ) {
         return ResponseEntity
                 .status(HttpStatus.OK)
                 .body(CommonResponse.success(
                         TeamSuccessCode.GET_INVITATION_LIST,
-                        teamInvitationFacade.getMyInvitations(authUser)
+                        teamInvitationFacade.getMyInvitations(authUser, page, size)
                 ));
     }
 

@@ -8,6 +8,7 @@ import com.backend.orbitflow.global.common.error.exception.InvalidRequestExcepti
 import com.backend.orbitflow.global.error.GlobalErrorCode;
 
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.PessimisticLockingFailureException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
@@ -36,7 +37,12 @@ public class GlobalExceptionHandler {
 
         String instance = request.getRequestURI();
 
-        log.error("예외 발생: [{}] - {}", errorCode.getTitle(), errorCode.getMessage(), e);
+        // 4xx는 클라이언트 요청 오류이므로 스택 트레이스 없이 경고로만, 5xx만 스택 트레이스와 함께 기록
+        if (errorCode.getHttpStatus().is5xxServerError()) {
+            log.error("예외 발생: [{}] - {}", errorCode.getTitle(), errorCode.getMessage(), e);
+        } else {
+            log.warn("예외 발생: [{}] - {} ({})", errorCode.getTitle(), errorCode.getMessage(), instance);
+        }
 
         return ResponseEntity
                 .status(errorCode.getHttpStatus())
@@ -141,6 +147,19 @@ public class GlobalExceptionHandler {
     ) {
         ErrorCode errorCode = GlobalErrorCode.CONCURRENT_REQUEST_CONFLICT;
         log.warn("락 획득 실패: {} - {}", request.getRequestURI(), e.getMessage());
+        return ResponseEntity
+                .status(errorCode.getHttpStatus())
+                .body(CommonResponse.fail(null, errorCode, request.getRequestURI()));
+    }
+
+    // 유니크 제약·외래 키 위반 등 : 동시 요청 경합이나 중복 데이터로 인한 충돌 (원인은 로그에 남김)
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<CommonResponse<Object>> handleDataIntegrityViolation(
+            DataIntegrityViolationException e,
+            HttpServletRequest request
+    ) {
+        ErrorCode errorCode = GlobalErrorCode.DATA_CONFLICT;
+        log.warn("데이터 무결성 위반: {}", request.getRequestURI(), e);
         return ResponseEntity
                 .status(errorCode.getHttpStatus())
                 .body(CommonResponse.fail(null, errorCode, request.getRequestURI()));

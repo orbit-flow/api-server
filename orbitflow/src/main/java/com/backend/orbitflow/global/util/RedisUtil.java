@@ -37,6 +37,15 @@ public class RedisUtil {
         return Boolean.TRUE.equals(redisTemplate.opsForValue().setIfAbsent(key, value, timeout));
     }
 
+    // 카운터 1 증가 (INCR), 처음 증가한 경우에만 TTL 설정 : 증가 후 값 반환
+    public long increment(String key, Duration timeout) {
+        Long count = redisTemplate.opsForValue().increment(key);
+        if (count != null && count == 1L) {
+            redisTemplate.expire(key, timeout);
+        }
+        return count == null ? 0L : count;
+    }
+
     // 조회와 삭제를 원자적으로 수행 (GETDEL) : 일회용 토큰의 동시 사용 방지
     public <T> Optional<T> getAndDeleteValues(String key, Class<T> clazz) {
         Object value = redisTemplate.opsForValue().getAndDelete(key);

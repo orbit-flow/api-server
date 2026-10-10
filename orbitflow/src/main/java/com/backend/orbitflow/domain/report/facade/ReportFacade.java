@@ -12,7 +12,9 @@ import com.backend.orbitflow.global.common.dto.response.PageResponse;
 import com.backend.orbitflow.global.security.AuthUser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
+import com.backend.orbitflow.domain.report.dto.response.ReportListResponse;
 
 @Component
 @RequiredArgsConstructor
@@ -21,7 +23,8 @@ public class ReportFacade {
     private final ReportService reportService;
     private final UserService userService;
 
-    @Transactional
+    // 신고자 행 락(PESSIMISTIC_WRITE)이 최신 상태를 보도록 READ_COMMITTED 필수
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public ReportResponse createReport(AuthUser authUser, ReportRequest request) {
         User targetUser = request.contentType() == ReportContentType.USER && request.targetUserUuid() != null
                 ? userService.getByUuid(request.targetUserUuid())
@@ -36,12 +39,12 @@ public class ReportFacade {
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<ReportResponse> getMyReports(AuthUser authUser, int page, int size) {
+    public PageResponse<ReportListResponse> getMyReports(AuthUser authUser, int page, int size) {
         return PageResponse.from(reportService.getMyReports(userService.getByUuid(authUser.getUuid()), page, size));
     }
 
     @Transactional(readOnly = true)
-    public PageResponse<ReportResponse> searchReports(ReportStatus status, ReportContentType contentType, int page, int size) {
+    public PageResponse<ReportListResponse> searchReports(ReportStatus status, ReportContentType contentType, int page, int size) {
         return PageResponse.from(reportService.searchReports(status, contentType, page, size));
     }
 

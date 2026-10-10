@@ -6,6 +6,8 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.Optional;
+import java.util.Collection;
+import java.util.List;
 
 public interface ChatroomRepository extends JpaRepository<Chatroom, Long> {
 
@@ -13,4 +15,7 @@ public interface ChatroomRepository extends JpaRepository<Chatroom, Long> {
     Optional<Chatroom> findByUuid(@Param("uuid") String uuid);
 
     Optional<Chatroom> findByDirectKey(String directKey);
+
+    @Query("select c from Chatroom c left join fetch c.team where c.id in :ids")
+    List<Chatroom> findAllWithTeamByIdIn(@Param("ids") Collection<Long> ids);
 }

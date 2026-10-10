@@ -1,15 +1,8 @@
 package com.backend.orbitflow.domain.timeline.enums;
 
-import lombok.Getter;
-import lombok.RequiredArgsConstructor;
-
-// order : 같은 시각일 때의 정렬 순서 (커서 비교 키)
-@Getter
-@RequiredArgsConstructor
+// POST : 투두 기반 게시글, TODO_COMPLETED : 투두 완료 활동 (같은 시각이면 이 순서로 정렬)
 public enum TimelineItemType {
 
-    POST(0),
-    TODO_COMPLETED(1);
-
-    private final int order;
+    POST,
+    TODO_COMPLETED
 }
