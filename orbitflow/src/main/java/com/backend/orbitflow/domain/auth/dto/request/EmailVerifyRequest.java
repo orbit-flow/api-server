@@ -4,7 +4,7 @@ import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
 
-public record EmailVarifyRequest(
+public record EmailVerifyRequest(
 
         @NotBlank(message = "이메일은 비어있을 수 없습니다.")
         @Email(message = "이메일을 입력해 주세요.")
@@ -14,7 +14,7 @@ public record EmailVarifyRequest(
         @Pattern(regexp = "\\d{6}")
         String code
 ) {
-    public EmailVarifyRequest {
+    public EmailVerifyRequest {
         email = email == null ? null : email.trim().toLowerCase();
     }
 }

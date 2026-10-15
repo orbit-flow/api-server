@@ -88,7 +88,7 @@ public class CategoryAuthorityServiceImpl implements CategoryAuthorityService {
     }
 
     // 팀 카테고리를 볼 수 있는 팀 구성원의 사용자 id (구성원마다 권한을 조회하지 않음)
-    public Set<Long> findViewerUserIds(Category teamCategory) {
+    private Set<Long> findViewerUserIds(Category teamCategory) {
         return categoryRepository.findViewerUserIds(teamCategory.getId());
     }
 

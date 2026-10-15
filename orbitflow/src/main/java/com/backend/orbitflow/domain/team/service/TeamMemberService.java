@@ -20,6 +20,7 @@ public interface TeamMemberService {
     // 탈퇴·추방은 호출 측이 검증 → 담당 투두 상속 → 팀 채팅방 제외 → removeMember 순서로 진행
     void checkLeavable(Team team, User me);
     TeamMember getKickTarget(Team team, User actor, User target);
+    void checkKickable(int actorMask, int targetMask);
     void removeMember(TeamMember member);
     // actorMask : 요청자의 팀 권한 (호출 측이 판정해 전달, 권한 상승 방지에 사용)
     TeamMemberResponse updateMemberRoles(Team team, int actorMask, User target, List<Long> roleIds);

@@ -6,6 +6,7 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.util.Optional;
+import java.util.UUID;
 
 @Component
 @RequiredArgsConstructor
@@ -35,6 +36,27 @@ public class RedisUtil {
     // 키가 없을 때만 저장 (SET NX), 저장했으면 true
     public boolean setIfAbsent(String key, Object value, Duration timeout) {
         return Boolean.TRUE.equals(redisTemplate.opsForValue().setIfAbsent(key, value, timeout));
+    }
+
+    public String acquireLock(String key, Duration timeout) {
+        String token = UUID.randomUUID().toString();
+        return setIfAbsent(key, token, timeout) ? token : null;
+    }
+
+    public boolean releaseLock(String key, String token) {
+        String script = """
+                if redis.call('get', KEYS[1]) == ARGV[1] then
+                    return redis.call('del', KEYS[1])
+                else
+                    return 0
+                end
+                """;
+        Long deleted = redisTemplate.execute(
+                org.springframework.data.redis.core.script.RedisScript.of(script, Long.class),
+                java.util.List.of(key),
+                token
+        );
+        return Long.valueOf(1L).equals(deleted);
     }
 
     // 카운터 1 증가 (INCR), 처음 증가한 경우에만 TTL 설정 : 증가 후 값 반환

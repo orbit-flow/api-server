@@ -17,8 +17,9 @@ import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Arrays;
+import java.util.List;
 
-// 승인·환불은 PaymentService가 트랜잭션 경계를 직접 제어하므로 파사드에 @Transactional을 두지 않음 (주문 생성만 사용자 행 락과 같은 트랜잭션 필요)
+// 승인·환불은 PaymentService의 @Transactional이 경계(실패 처리 커밋 포함)를 제어하므로 파사드에 @Transactional을 두지 않음 (주문 생성만 사용자 행 락과 같은 트랜잭션 필요)
 @Component
 @RequiredArgsConstructor
 public class PaymentFacade {
@@ -26,11 +27,11 @@ public class PaymentFacade {
     private final PaymentService paymentService;
     private final UserService userService;
 
-    // 상품 구성은 코드에 고정된 값이므로 메모리 목록을 같은 페이지 형식으로 반환
-    public PageResponse<PointPackageResponse> getPointPackages(int page, int size) {
-        return PageResponse.of(Arrays.stream(PointPackage.values())
+    // 상품 구성은 코드에 고정된 값이므로 페이지 없이 전체 반환
+    public List<PointPackageResponse> getPointPackages() {
+        return Arrays.stream(PointPackage.values())
                 .map(PointPackageResponse::from)
-                .toList(), page, size);
+                .toList();
     }
 
     // 사용자 행 락으로 동시 주문 생성을 직렬화 : 락과 주문 쓰기를 한 트랜잭션에 묶음 (READ_COMMITTED 필수)

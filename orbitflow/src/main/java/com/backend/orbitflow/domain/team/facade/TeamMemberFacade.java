@@ -101,10 +101,11 @@ public class TeamMemberFacade {
         // 정지된 구성원도 관리할 수 있도록 정지 사용자 포함 조회
         User target = userService.getByUuidIncludingBanned(userUuid);
         User actor = userService.getActiveByUuid(authUser.getUuid());
-        teamAuthorityService.checkPermission(team, actor, TeamPermission.MANAGE_MEMBERS);
+        TeamMember actorMember = teamAuthorityService.checkPermission(team, actor, TeamPermission.MANAGE_MEMBERS);
         TeamMember targetMember = teamMemberService.getKickTarget(team, actor, target);
-        // 권한 상승 방지 : 요청자가 보유하지 않은 권한을 가진 구성원은 추방할 수 없음
-        teamAuthorityService.checkGrantable(team, actor, teamAuthorityService.getPermissionMask(team, targetMember));
+        teamMemberService.checkKickable(
+                teamAuthorityService.getPermissionMask(team, actorMember),
+                teamAuthorityService.getPermissionMask(team, targetMember));
         // 구성원 삭제 전에 담당 투두 상속 → 팀 채팅방 제외
         Map<Long, Integer> inherited = todoTransferService.inherit(team, targetMember.getUser());
         chatroomService.leaveTeamChatrooms(team, targetMember.getUser());

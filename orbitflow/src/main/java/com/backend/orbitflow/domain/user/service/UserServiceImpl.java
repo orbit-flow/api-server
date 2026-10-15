@@ -6,13 +6,14 @@ import com.backend.orbitflow.domain.user.enums.UserRole;
 import com.backend.orbitflow.domain.user.enums.UserStatus;
 import com.backend.orbitflow.domain.user.error.UserErrorCode;
 import com.backend.orbitflow.global.common.error.exception.CommonException;
+import com.backend.orbitflow.global.util.S3Service;
+import com.backend.orbitflow.global.util.S3TransactionalFileManager;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.backend.orbitflow.domain.user.repository.UserRepository;
 
-import com.backend.orbitflow.domain.user.event.UserRegisteredEvent;
 import com.backend.orbitflow.domain.user.event.UserWithdrawnEvent;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
@@ -39,6 +40,8 @@ public class UserServiceImpl implements UserService{
     private final UserRepository userRepository;
     private final ApplicationEventPublisher eventPublisher;
     private final EntityManager entityManager;
+    private final S3Service s3Service;
+    private final S3TransactionalFileManager s3FileManager;
 
     // 로그인한 본인의 변경·조회 : 정지·휴면·탈퇴 계정은 대상이 아님 (휴면 계정은 로그인·이메일 인증 절차로만 활성화)
     @Transactional(readOnly = true)
@@ -88,13 +91,6 @@ public class UserServiceImpl implements UserService{
     }
 
     @Transactional(readOnly = true)
-    public User getByEmail(String email) {
-        return userRepository.findByEmail(email).orElseThrow(
-                () -> new CommonException(UserErrorCode.USER_NOT_FOUND)
-        );
-    }
-
-    @Transactional(readOnly = true)
     public Optional<User> findByEmail(String email) {
         return userRepository.findByEmail(email);
     }
@@ -131,19 +127,28 @@ public class UserServiceImpl implements UserService{
                 name,
                 UserRole.ROLE_USER
         );
-        return saveNewUser(user);
+        return userRepository.save(user);
     }
 
     // 탈퇴한 계정(30일 유예 중)이 점유한 이메일을 풀어 재가입을 허용 : 이전 계정은 식별정보를 지워 복구할 수 없게 함
     // 이메일은 purge 가 "이미 처리됨"으로 보는 withdrawn- 접두어를 쓰지 않아, 보관 기간이 지나면 purge 가 남은 데이터를 정리함
     // 새 행의 INSERT(IDENTITY)가 먼저 실행되어 이메일 unique 에 걸리지 않도록 즉시 flush
     // 소셜 연결 삭제는 호출 측(Facade)이 반환된 이전 계정으로 수행
+    // 동시 로그인(복구)·동시 가입과 직렬화하려고 행 락을 잡고 최신 상태로 다시 확인 (락 이후 확인은 호출 측의 READ_COMMITTED 필요)
+    // 이전 프로필 이미지는 anonymize 로 참조가 사라지므로 여기서 커밋 후 삭제 (이후 purge 는 null 이라 지우지 못함)
     public Optional<User> releaseWithdrawnEmail(String email) {
         return userRepository.findByEmail(email)
                 .filter(found -> found.getDeletedAt() != null)
-                .map(withdrawn -> {
-                    withdrawn.anonymize(RELEASED_EMAIL_PREFIX + withdrawn.getUuid() + "@orbitflow.invalid");
-                    return userRepository.saveAndFlush(withdrawn);
+                .flatMap(found -> {
+                    User locked = lockUser(found.getId());
+                    if (locked.getDeletedAt() == null || !email.equals(locked.getEmail())) {
+                        return Optional.empty();
+                    }
+                    String oldImage = locked.getProfileImage();
+                    locked.anonymize(RELEASED_EMAIL_PREFIX + locked.getUuid() + "@orbitflow.invalid");
+                    userRepository.saveAndFlush(locked);
+                    deleteManagedImage(oldImage);
+                    return Optional.of(locked);
                 });
     }
 
@@ -157,7 +162,7 @@ public class UserServiceImpl implements UserService{
                 name,
                 profileImage
         );
-        return saveNewUser(user);
+        return userRepository.save(user);
     }
 
     public User updateProfile(String uuid, String name, String introduce, boolean isPrivate) {
@@ -166,10 +171,12 @@ public class UserServiceImpl implements UserService{
         return userRepository.save(user);
     }
 
-    // 호출 측 트랜잭션에서 이미 조회한(영속 상태) 사용자를 받아 변경 : 더티 체킹으로 UPDATE 1회, 재조회 없음
-    // 변경 전 이미지 URL은 호출 측이 변경 전에 user 에서 읽어 커밋 후 정리
-    public User updateProfileImage(User user, String profileImage) {
+    // DB 작업은 사용자 조회 SELECT 1회 + 변경 UPDATE 1회 (더티 체킹), 변경 전 이미지는 커밋 후 삭제
+    public User replaceProfileImage(String uuid, String profileImage) {
+        User user = getActiveByUuid(uuid);
+        String oldImage = user.getProfileImage();
         user.updateProfileImage(profileImage);
+        deleteManagedImage(oldImage);
         return user;
     }
 
@@ -263,10 +270,11 @@ public class UserServiceImpl implements UserService{
         userRepository.save(user);
     }
 
-    // 가입 이벤트로 같은 트랜잭션에서 기본 아바타·초기 포인트 지급 (실패 시 가입도 롤백)
-    private User saveNewUser(User user) {
-        User saved = userRepository.save(user);
-        eventPublisher.publishEvent(new UserRegisteredEvent(saved));
-        return saved;
+    // 소셜 프로필 등 외부 URL은 삭제하지 않고, 우리 S3 파일만 커밋 후 삭제
+    private void deleteManagedImage(String imageUrl) {
+        if (s3Service.isManagedFile(imageUrl)) {
+            s3FileManager.deleteAfterCommit(List.of(imageUrl));
+        }
     }
+
 }

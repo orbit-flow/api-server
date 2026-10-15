@@ -1,6 +1,7 @@
 package com.backend.orbitflow.domain.avatar.facade;
 
 import com.backend.orbitflow.domain.avatar.dto.response.AvatarResponse;
+import com.backend.orbitflow.domain.avatar.entity.Avatar;
 import com.backend.orbitflow.domain.avatar.dto.response.PurchaseResponse;
 import com.backend.orbitflow.domain.avatar.dto.response.UserItemResponse;
 import com.backend.orbitflow.domain.avatar.service.AvatarService;
@@ -46,7 +47,9 @@ public class AvatarFacade {
     @Transactional(isolation = Isolation.READ_COMMITTED)
     public PurchaseResponse purchase(AuthUser authUser, Long itemId) {
         User me = me(authUser);
-        PurchaseResponse response = avatarService.purchase(me, itemService.getItem(itemId));
+        // 아바타 행 락 이후에 아이템 조회 (락 대기 중 판매 중단·가격 변경 반영)
+        Avatar avatar = avatarService.lockAvatar(me);
+        PurchaseResponse response = avatarService.purchase(me, avatar, itemService.getItem(itemId));
         eventPublisher.publishEvent(NotificationRequest.to(me, NotificationType.ITEM_PURCHASED, null, response.itemId(), null,
                 "'" + response.name() + "'을(를) " + response.price() + "P에 구매했습니다. (잔액 " + response.balanceAfter() + "P)"));
         return response;

@@ -8,19 +8,16 @@ import com.backend.orbitflow.global.util.S3Service;
 import com.backend.orbitflow.global.util.S3TransactionalFileManager;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
-import lombok.extern.slf4j.Slf4j;
+import lombok.RequiredArgsConstructor;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.function.Consumer;
 
 /**
  * 논리적 삭제 후 30일이 지난 데이터 영구 삭제
@@ -33,49 +30,38 @@ import java.util.function.Consumer;
  *   <li>삭제된 투두 : 연결된 게시글이 없는 투두만 삭제 (게시글은 "삭제된 투두"로 표시되며 유지)</li>
  * </ul>
  *
- * <p>대상 단위(사용자·팀)마다 별도 트랜잭션으로 처리해 한 건의 실패가 전체를 막지 않음
+ * <p>대상 단위(사용자·팀)마다 별도 트랜잭션으로 처리해 한 건의 실패가 전체를 막지 않음 (DataPurgeScheduler가 건별로 호출하고 실패를 기록)
  * <p>S3 파일은 연쇄 삭제 전에 목록을 수집하고 커밋 후 삭제
- * <p>탈퇴 사용자는 투두 상속(TodoTransferService)이 중간에 필요해 DataPurgeScheduler가 사용자 단위 트랜잭션 안에서 단계별 메서드를 조율
+ * <p>탈퇴 사용자는 투두 상속(TodoTransferService)이 중간에 필요해 DataPurgeFacade가 사용자 단위 트랜잭션 안에서 단계별 메서드를 조율
  */
-@Slf4j
 @Service
+@RequiredArgsConstructor
 public class DataPurgeService {
 
     public static final int RETENTION_DAYS = 30;
     private static final String WITHDRAWN_EMAIL_PREFIX = "withdrawn-";
     private static final int TODO_BATCH_SIZE = 500;
-    private static final int MAX_TODO_ROUNDS = 20;
 
     private final EntityManager em;
-    private final TransactionTemplate transactionTemplate;
     private final S3Service s3Service;
     private final S3TransactionalFileManager s3FileManager;
     private final ApplicationEventPublisher eventPublisher;
 
-    public DataPurgeService(EntityManager em, PlatformTransactionManager transactionManager,
-                            S3Service s3Service, S3TransactionalFileManager s3FileManager,
-                            ApplicationEventPublisher eventPublisher) {
-        this.em = em;
-        this.transactionTemplate = new TransactionTemplate(transactionManager);
-        this.s3Service = s3Service;
-        this.s3FileManager = s3FileManager;
-        this.eventPublisher = eventPublisher;
-    }
-
     // ---------- 탈퇴 사용자 ----------
 
+    @Transactional(readOnly = true)
     public List<Long> findWithdrawnUserIds(LocalDateTime threshold) {
-        return transactionTemplate.execute(s -> em.createQuery("""
+        return em.createQuery("""
                         select u.id from User u
                         where u.deletedAt is not null and u.deletedAt < :threshold
                           and u.email not like :prefix
                         """, Long.class)
                 .setParameter("threshold", threshold)
                 .setParameter("prefix", WITHDRAWN_EMAIL_PREFIX + "%")
-                .getResultList());
+                .getResultList();
     }
 
-    // 사용자 단위 영구 삭제는 DataPurgeScheduler가 하나의 트랜잭션에서 1단계 -> 팀별 투두 상속 -> 3단계 순으로 호출
+    // 사용자 단위 영구 삭제는 DataPurgeFacade가 하나의 트랜잭션에서 1단계 -> 팀별 투두 상속 -> 3단계 순으로 호출
     // 1단계 : 목록 수집 이후 로그인으로 복구된 사용자를 지우지 않도록 락을 잡고 대상 조건을 다시 확인 (대상이 아니면 empty)
     public Optional<User> lockPurgeTarget(Long userId) {
         User user = em.find(User.class, userId, LockModeType.PESSIMISTIC_WRITE);
@@ -146,16 +132,17 @@ public class DataPurgeService {
 
     // ---------- 삭제된 팀 ----------
 
-    public int purgeTeams(LocalDateTime threshold) {
-        List<Long> teamIds = transactionTemplate.execute(s -> em.createQuery(
+    @Transactional(readOnly = true)
+    public List<Long> findPurgeTeamIds(LocalDateTime threshold) {
+        return em.createQuery(
                         "select t.id from Team t where t.deletedAt is not null and t.deletedAt < :threshold", Long.class)
                 .setParameter("threshold", threshold)
-                .getResultList());
-        return runEach(teamIds, "삭제된 팀", this::purgeTeam);
+                .getResultList();
     }
 
-    // 팀 행 삭제 시 채팅방(메시지)·카테고리(투두·게시글)·역할·구성원·초대는 DB가 연쇄 삭제
-    private void purgeTeam(Long teamId) {
+    // 팀 단위 트랜잭션 : 팀 행 삭제 시 채팅방(메시지)·카테고리(투두·게시글)·역할·구성원·초대는 DB가 연쇄 삭제
+    @Transactional
+    public void purgeTeam(Long teamId) {
         // 목록 수집 이후 복구된 팀은 삭제하지 않음 (락을 잡고 대상 조건을 다시 확인)
         Team team = em.find(Team.class, teamId, LockModeType.PESSIMISTIC_WRITE);
         if (team == null || !isPurgeTarget(team.getDeletedAt())) {
@@ -170,33 +157,25 @@ public class DataPurgeService {
 
     // ---------- 삭제된 투두 ----------
 
-    // 게시글이 연결된 투두와, 하위 투두가 남아 있는 투두는 제외 (하위부터 여러 차례에 걸쳐 삭제)
+    // 한 묶음(TODO_BATCH_SIZE) 단위 트랜잭션, 삭제한 수를 반환 (스케줄러가 0이 될 때까지 반복 호출 : 하위부터 여러 차례에 걸쳐 삭제)
+    // 게시글이 연결된 투두와, 하위 투두가 남아 있는 투두는 제외
     // 반복 규칙의 원본 투두도 제외 : 원본 삭제는 그 회차만 삭제한 것이고 규칙은 원본을 기준으로 계속 회차를 만듦 (규칙을 해제하면 삭제 대상)
-    public int purgeTodos(LocalDateTime threshold) {
-        int total = 0;
-        for (int round = 0; round < MAX_TODO_ROUNDS; round++) {
-            Integer deleted = transactionTemplate.execute(s -> {
-                List<Long> todoIds = em.createQuery("""
-                                select t.id from Todo t
-                                where t.deletedAt is not null and t.deletedAt < :threshold
-                                  and not exists (select p.id from Post p where p.todo = t)
-                                  and not exists (select c.id from Todo c where c.parentTodo = t)
-                                  and not exists (select r.id from Routine r where r.todo = t)
-                                """, Long.class)
-                        .setParameter("threshold", threshold)
-                        .setMaxResults(TODO_BATCH_SIZE)
-                        .getResultList();
-                if (!todoIds.isEmpty()) {
-                    update("delete from Todo t where t.id in :ids", Map.of("ids", todoIds));
-                }
-                return todoIds.size();
-            });
-            if (deleted == null || deleted == 0) {
-                break;
-            }
-            total += deleted;
+    @Transactional
+    public int purgeTodoBatch(LocalDateTime threshold) {
+        List<Long> todoIds = em.createQuery("""
+                        select t.id from Todo t
+                        where t.deletedAt is not null and t.deletedAt < :threshold
+                          and not exists (select p.id from Post p where p.todo = t)
+                          and not exists (select c.id from Todo c where c.parentTodo = t)
+                          and not exists (select r.id from Routine r where r.todo = t)
+                        """, Long.class)
+                .setParameter("threshold", threshold)
+                .setMaxResults(TODO_BATCH_SIZE)
+                .getResultList();
+        if (!todoIds.isEmpty()) {
+            update("delete from Todo t where t.id in :ids", Map.of("ids", todoIds));
         }
-        return total;
+        return todoIds.size();
     }
 
     // ---------- 공통 ----------
@@ -216,18 +195,5 @@ public class DataPurgeService {
         var typed = em.createQuery(query);
         params.forEach(typed::setParameter);
         typed.executeUpdate();
-    }
-
-    private int runEach(Collection<Long> ids, String label, Consumer<Long> action) {
-        int done = 0;
-        for (Long id : ids == null ? List.<Long>of() : ids) {
-            try {
-                transactionTemplate.executeWithoutResult(s -> action.accept(id));
-                done++;
-            } catch (RuntimeException e) {
-                log.error("{} 영구 삭제 실패 : id={}", label, id, e);
-            }
-        }
-        return done;
     }
 }

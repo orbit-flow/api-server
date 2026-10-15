@@ -58,16 +58,16 @@ public class PostServiceImpl implements PostService {
                 .orElseThrow(() -> new CommonException(TodoErrorCode.TODO_NOT_FOUND));
     }
 
-    // 차단 관계가 우선 (작성자 본인은 호출 측에서 false로 전달)
-    public void checkNotBlocked(boolean blocked) {
-        if (blocked) {
+    // 차단 관계가 우선, 작성자 본인은 제외
+    public void checkNotBlocked(Post post, User viewer, boolean blocked) {
+        if (!post.isAuthor(viewer) && blocked) {
             throw new CommonException(PostErrorCode.POST_ACCESS_DENIED);
         }
     }
 
-    // 연결된 투두의 카테고리 공개 범위 (작성자 본인은 호출 측에서 true로 전달)
-    public void checkCategoryViewable(boolean viewable) {
-        if (!viewable) {
+    // 연결된 투두의 카테고리 공개 범위, 작성자 본인은 제외
+    public void checkCategoryViewable(Post post, User viewer, boolean canView) {
+        if (!post.isAuthor(viewer) && !canView) {
             throw new CommonException(PostErrorCode.POST_ACCESS_DENIED);
         }
     }
@@ -99,11 +99,11 @@ public class PostServiceImpl implements PostService {
         return postRepository.findAllByTodo(todo, viewer, onlyAuthorId, toPageable(page, size));
     }
 
-    // 작성자의 게시글 중 viewer가 열람 가능한 카테고리의 게시글만 (차단 관계는 호출 측에서 판정해 전달)
+    // 작성자의 게시글 중 viewer가 열람 가능한 카테고리의 게시글만 (viewer·작성자 간 차단 관계는 호출 측이 조회해 전달, 본인 글이면 무시)
     @Transactional(readOnly = true)
     public Page<Post> findUserPosts(User viewer, User author, boolean blocked, int page, int size) {
         Pageable pageable = toPageable(page, size);
-        if (blocked) {
+        if (!viewer.getId().equals(author.getId()) && blocked) {
             return Page.empty(pageable);
         }
         // 열람 판정은 조회 쿼리에서 (목록 id 1 + 개수 1 + 본문 1 + 사진·좋아요·댓글 묶음 조회)
@@ -116,8 +116,6 @@ public class PostServiceImpl implements PostService {
     // 유지할 사진을 요청 순서대로 두고 새 사진을 뒤에 추가, 빠진 사진은 커밋 후 S3에서 삭제
     public PostResponse updatePost(User actor, Post post, String content, List<String> keepImageUrls, List<MultipartFile> newImages,
                                    long likeCount, long commentCount, boolean liked) {
-        checkAuthor(post, actor);
-
         List<PostImage> current = postImageRepository.findAllByPostOrderBySortOrderAsc(post);
         Map<String, PostImage> currentByUrl = new LinkedHashMap<>();
         current.forEach(image -> currentByUrl.put(image.getImageUrl(), image));
@@ -171,7 +169,8 @@ public class PostServiceImpl implements PostService {
         }
     }
 
-    private void checkAuthor(Post post, User actor) {
+    // 수정 전 호출 측이 먼저 확인 (확인 전 좋아요·댓글 수 조회를 피하기 위함)
+    public void checkAuthor(Post post, User actor) {
         if (!post.isAuthor(actor)) {
             throw new CommonException(PostErrorCode.NOT_POST_AUTHOR);
         }

@@ -44,7 +44,7 @@ public class PointLedger {
     private final EntityManager entityManager;
 
     // 가입 시 기본 아바타와 초기 포인트 지급 (초기 포인트도 거래로 기록)
-    // 가입 트랜잭션(UserRegisteredEvent)과 기존 가입자 보정(AvatarBackfillRunner)에서만 호출
+    // 가입 트랜잭션(AvatarService.createAvatar)과 기존 가입자 보정(AvatarBackfillRunner)에서만 호출
     @Transactional
     public Avatar createAvatar(User user) {
         return avatarRepository.findByUser(user).orElseGet(() -> {

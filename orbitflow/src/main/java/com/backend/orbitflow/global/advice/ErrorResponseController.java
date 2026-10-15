@@ -10,8 +10,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
-// /error 처리 : 기본 HTML 오류 페이지(Whitelabel) 대신 항상 공통 응답 형식(JSON)으로 반환
-// 컨트롤러 밖(필터 등)에서 난 예외, 없는 경로(404), 지원하지 않는 메서드(405) 등이 여기로 전달됨
 @RestController
 public class ErrorResponseController implements ErrorController {
 

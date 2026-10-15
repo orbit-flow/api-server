@@ -9,6 +9,7 @@ import com.backend.orbitflow.domain.avatar.error.AvatarErrorCode;
 import com.backend.orbitflow.domain.avatar.repository.AvatarRepository;
 import com.backend.orbitflow.domain.avatar.repository.UserItemRepository;
 import com.backend.orbitflow.domain.item.entity.Item;
+import com.backend.orbitflow.domain.item.enums.ItemType;
 import com.backend.orbitflow.domain.point.entity.PointTransaction;
 import com.backend.orbitflow.domain.point.enums.PointTransactionType;
 import com.backend.orbitflow.domain.point.service.PointLedger;
@@ -34,6 +35,11 @@ public class AvatarServiceImpl implements AvatarService {
     private final UserItemRepository userItemRepository;
     private final PointLedger pointLedger;
 
+    // 가입 시 기본 아바타와 초기 포인트 지급 (가입 Facade가 가입과 같은 트랜잭션에서 호출)
+    public Avatar createAvatar(User user) {
+        return pointLedger.createAvatar(user);
+    }
+
     @Transactional(readOnly = true)
     public AvatarResponse getMyAvatar(User me) {
         Avatar avatar = getAvatar(me);
@@ -53,9 +59,17 @@ public class AvatarServiceImpl implements AvatarService {
         return userItemRepository.findAllWithItemByAvatar(getAvatar(me), pageable).map(UserItemResponse::from);
     }
 
-    // 아이템 부위 변경 시 같은 부위 중복 장착 방지를 위해 모든 사용자의 장착 해제
-    public void unequipAllByItem(Item item) {
-        userItemRepository.unequipAllByItem(item);
+    // 아이템 부위 변경 시 같은 부위 중복 장착 방지를 위해 모든 사용자의 장착 해제 (부위가 그대로면 아무것도 하지 않음)
+    public void unequipAllOnTypeChange(Item item, ItemType newType) {
+        if (item.getType() != newType) {
+            userItemRepository.unequipAllByItem(item);
+        }
+    }
+
+    // 구매·장착 전에 호출 측이 먼저 잡는 아바타 행 락 : 락 이후에 아이템을 조회해야 대기 중 판매 중단·가격 변경이 반영됨 (READ COMMITTED 필수)
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public Avatar lockAvatar(User me) {
+        return pointLedger.lock(me);
     }
 
     @Transactional(readOnly = true)
@@ -69,10 +83,9 @@ public class AvatarServiceImpl implements AvatarService {
     }
 
     // 판매 중인 아이템을 가격 이상의 포인트를 보유한 경우에만 구매, 구매 즉시 보유 목록에 추가 (취소·환급 불가)
-    // 아바타 행 락을 먼저 잡고 보유·잔액을 확인하므로 동시 구매(같은 아이템 중복, 잔액 초과)가 직렬화됨
+    // 호출 측이 아바타 행 락(lockAvatar)을 먼저 잡고 그 뒤에 조회한 아이템을 전달하므로 동시 구매(같은 아이템 중복, 잔액 초과)가 직렬화됨
     @Transactional(isolation = Isolation.READ_COMMITTED)
-    public PurchaseResponse purchase(User me, Item item) {
-        Avatar avatar = pointLedger.lock(me);
+    public PurchaseResponse purchase(User me, Avatar avatar, Item item) {
         if (!item.isOnSale()) {
             throw new CommonException(AvatarErrorCode.ITEM_NOT_ON_SALE);
         }

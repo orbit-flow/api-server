@@ -15,6 +15,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDate;
@@ -36,9 +37,10 @@ public class ReportServiceImpl implements ReportService {
     // 신고자가 볼 수 없는 대상(차단·비공개 등)은 존재 여부가 드러나지 않도록 없는 대상으로 처리, 하루 신고 횟수 제한
     // 신고자 행 락은 호출하는 파사드가 같은 트랜잭션에서 먼저 잡아 중복 확인과 저장을 직렬화 (파사드 트랜잭션은 READ_COMMITTED 필수)
     // 대상 조회(열람 가능한 게시글·댓글·차단 관계)는 다른 도메인 서비스가 필요해 파사드가 미리 조회해 전달하고, 판정 순서는 여기서 그대로 유지
-    // viewablePost : POST는 대상 게시글, COMMENT는 댓글이 달린 게시글 (열람 불가면 empty), blocked : COMMENT는 댓글 작성자, USER는 대상 사용자와의 차단 관계
+    // viewablePost : POST는 대상 게시글, COMMENT는 댓글이 달린 게시글 (열람 불가면 empty), 신고 유형에 해당하는 값만 사용
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public UserReport createReport(User reporter, ReportContentType contentType, Long targetId, User targetUser,
-                                   Optional<Post> viewablePost, Optional<Comment> targetComment, boolean blocked, String reason) {
+                                   Optional<Post> viewablePost, Optional<Comment> targetComment, boolean commentAuthorBlocked, boolean targetUserBlocked, String reason) {
         if (userReportRepository.countByReporterAndCreatedAtGreaterThanEqual(reporter, LocalDate.now().atStartOfDay()) >= DAILY_REPORT_LIMIT) {
             throw new CommonException(ReportErrorCode.REPORT_LIMIT_EXCEEDED);
         }
@@ -63,7 +65,7 @@ public class ReportServiceImpl implements ReportService {
                 if (viewablePost.isEmpty()) {
                     throw new CommonException(ReportErrorCode.REPORT_TARGET_NOT_FOUND);
                 }
-                if (comment.getUser().getDeletedAt() != null || blocked) {
+                if (comment.getUser().getDeletedAt() != null || commentAuthorBlocked) {
                     throw new CommonException(ReportErrorCode.REPORT_TARGET_NOT_FOUND);
                 }
                 reportedUser = comment.getUser();
@@ -75,7 +77,7 @@ public class ReportServiceImpl implements ReportService {
                     throw new CommonException(ReportErrorCode.INVALID_REPORT_TARGET);
                 }
                 validateNotSelf(reporter, targetUser);
-                if (blocked) {
+                if (targetUserBlocked) {
                     throw new CommonException(ReportErrorCode.REPORT_TARGET_NOT_FOUND);
                 }
                 reportedUser = targetUser;

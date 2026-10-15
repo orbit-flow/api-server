@@ -12,7 +12,6 @@ import com.backend.orbitflow.domain.todo.repository.TodoRepository;
 import com.backend.orbitflow.domain.user.entity.User;
 import com.backend.orbitflow.global.common.error.exception.CommonException;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,9 +24,6 @@ import java.util.List;
 import java.util.Set;
 import com.backend.orbitflow.domain.todo.dto.RoutineSlot;
 import com.backend.orbitflow.domain.todo.dto.response.DashboardTodoResponse;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.support.TransactionTemplate;
 import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -38,7 +34,6 @@ import com.backend.orbitflow.domain.todo.reminder.TodoReminderQueue;
 
 // 생성된 회차의 수정·삭제는 개별 투두 단위로 처리하며, 규칙 변경은 범위(전체·오늘부터)에 따라 오늘 이후의 미완료·미이동 회차까지 정리
 // 회차 슬롯 = 회차의 원래 시각 (Todo.occurrenceDate, 없으면 시작 시각) : 사용자가 옮긴 회차의 원래 슬롯은 다시 생성하지 않음
-@Slf4j
 @Service
 @RequiredArgsConstructor
 @Transactional
@@ -48,9 +43,7 @@ public class RoutineServiceImpl implements RoutineService {
     private final TodoReminderQueue todoReminderQueue;
     private final RoutineRepository routineRepository;
     private final TodoRepository todoRepository;
-    private final PlatformTransactionManager transactionManager;
 
-    private static final int GENERATION_CHUNK_SIZE = 200;
     // 오늘부터 변경할 때 기준 회차를 찾는 탐색 기간
     private static final int NEXT_OCCURRENCE_YEARS = 10;
 
@@ -230,8 +223,7 @@ public class RoutineServiceImpl implements RoutineService {
 
     // [from, to) 구간의 아직 생성되지 않은 회차 (반복 규칙 수와 무관하게 쿼리 2회 : 규칙, 생성된 회차 슬롯)
     // 과거 회차는 생성하지 않으므로 오늘 이전 구간은 미리보기에서도 제외
-    @Transactional(readOnly = true)
-    public List<DashboardTodoResponse> getPreviews(User user, LocalDateTime from, LocalDateTime to) {
+    private List<DashboardTodoResponse> getPreviews(User user, LocalDateTime from, LocalDateTime to) {
         from = laterOf(from, startOfToday());
         if (!from.isBefore(to)) {
             return List.of();
@@ -264,26 +256,15 @@ public class RoutineServiceImpl implements RoutineService {
         return previews;
     }
 
-    // 스케줄러에서 매일 호출 : 오늘부터 1개월 뒤까지의 회차 생성
-    // 반복 규칙을 묶음 단위로 나눠 묶음마다 별도 트랜잭션 (한 묶음의 실패가 전체를 막지 않고, 묶음당 조회 2회)
-    @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    public void generateAll() {
-        LocalDateTime from = LocalDateTime.now().toLocalDate().atStartOfDay();
-        LocalDateTime to = horizon();
-        List<Long> routineIds = routineRepository.findAllActiveIds(from);
-        TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
-        int created = 0;
-        for (int i = 0; i < routineIds.size(); i += GENERATION_CHUNK_SIZE) {
-            List<Long> chunk = routineIds.subList(i, Math.min(i + GENERATION_CHUNK_SIZE, routineIds.size()));
-            try {
-                Integer count = transactionTemplate.execute(status ->
-                        generate(routineRepository.findAllWithTodoByIdIn(chunk), from, to));
-                created += count == null ? 0 : count;
-            } catch (RuntimeException e) {
-                log.error("반복 회차 생성 실패 : 규칙 id {} ~ {}", chunk.get(0), chunk.get(chunk.size() - 1), e);
-            }
-        }
-        log.info("반복 회차 생성 완료: {}건", created);
+    // 스케줄러에서 매일 호출 : 오늘부터 1개월 뒤까지 회차를 생성할 반복 규칙 id
+    @Transactional(readOnly = true)
+    public List<Long> findActiveRoutineIds() {
+        return routineRepository.findAllActiveIds(LocalDate.now().atStartOfDay());
+    }
+
+    // 스케줄러가 반복 규칙을 묶음 단위로 나눠 호출 : 묶음마다 별도 트랜잭션 (한 묶음의 실패가 전체를 막지 않고, 묶음당 조회 2회)
+    public int generateOccurrences(List<Long> routineIds) {
+        return generate(routineRepository.findAllWithTodoByIdIn(routineIds), LocalDate.now().atStartOfDay(), horizon());
     }
 
     private int generate(Routine routine, LocalDateTime from, LocalDateTime to) {

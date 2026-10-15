@@ -11,10 +11,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.Optional;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.PageRequest;
 
 @Service
 @RequiredArgsConstructor
@@ -33,10 +31,10 @@ public class OAuthServiceImpl implements OAuthService{
         oAuthRepository.save(oAuthAccount);
     }
 
+    // 사용자당 1개(user_id 유일)이므로 페이지 없이 전체 반환
     @Transactional(readOnly = true)
-    public Page<OAuthAccount> getLinkedAccounts(User user, int page, int size) {
-        Pageable pageable = toPageable(page, size);
-        return oAuthRepository.findAllByUserOrderByCreatedAtAsc(user, pageable);
+    public List<OAuthAccount> getLinkedAccounts(User user) {
+        return oAuthRepository.findAllByUserOrderByCreatedAtAsc(user);
     }
 
     // 소셜 계정은 사용자당 1개(user_id 유일)이므로 비밀번호가 있을 때만 해제 (로그인 수단이 없어지는 것 방지)
@@ -55,10 +53,5 @@ public class OAuthServiceImpl implements OAuthService{
     // 탈퇴 계정의 이메일을 풀어 줄 때 함께 호출 : 소셜 연결을 모두 삭제해 같은 소셜 계정으로 새로 가입할 수 있게 함
     public void unlinkAll(User user) {
         oAuthRepository.deleteByUser(user);
-    }
-
-    // 요청 page는 1부터 시작
-    private Pageable toPageable(int page, int size) {
-        return PageRequest.of(Math.max(page - 1, 0), Math.min(Math.max(size, 1), 100));
     }
 }

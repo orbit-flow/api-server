@@ -2,7 +2,6 @@ package com.backend.orbitflow.domain.todo.reminder;
 
 import com.backend.orbitflow.domain.category.entity.Category;
 import com.backend.orbitflow.domain.notification.enums.NotificationType;
-import com.backend.orbitflow.domain.notification.service.NotificationService;
 import com.backend.orbitflow.domain.todo.entity.Todo;
 import com.backend.orbitflow.domain.todo.repository.TodoRepository;
 import lombok.RequiredArgsConstructor;
@@ -10,10 +9,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Duration;
 import java.time.LocalDateTime;
@@ -36,34 +32,9 @@ public class TodoReminderService {
 
     private final TodoRepository todoRepository;
     private final TodoReminderQueue todoReminderQueue;
-    private final NotificationService notificationService;
-    private final PlatformTransactionManager transactionManager;
 
-    // 꺼낸 항목의 처리 트랜잭션이 실패해도 재예약할 수 있도록 메서드 자체는 트랜잭션 없이 실행
-    // 한 번에 꺼내는 수에 상한이 있으므로 같은 분에 몰린 리마인드는 목록이 빌 때까지 반복해서 처리
-    @Transactional(propagation = Propagation.NOT_SUPPORTED)
-    public void sendDueReminders(LocalDateTime now) {
-        while (true) {
-            List<Long> todoIds = todoReminderQueue.claimDue(now);
-            if (todoIds.isEmpty()) {
-                return;
-            }
-            try {
-                Integer sent = new TransactionTemplate(transactionManager).execute(status -> send(todoIds, now));
-                if (sent != null && sent > 0) {
-                    log.info("투두 리마인드 발송 완료: {}건", sent);
-                }
-            } catch (RuntimeException e) {
-                // 이미 목록에서 꺼낸 항목이 유실되지 않도록 다시 예약 : 다음 분에 재시도하며, 10분이 지나면 발송 직전 확인에서 버려짐
-                // 재예약한 항목을 이번 실행에서 다시 꺼내지 않도록 반복 종료
-                log.error("투두 리마인드 발송 실패 : {}건 재예약", todoIds.size(), e);
-                todoReminderQueue.requeue(todoIds, now);
-                return;
-            }
-        }
-    }
-
-    private int send(List<Long> todoIds, LocalDateTime now) {
+    // 꺼낸 예약 항목의 발송 대상 (알림 저장은 호출 측 TodoScheduler가 같은 트랜잭션에서 NotificationService로 수행)
+    public List<NotificationDraft> createDrafts(List<Long> todoIds, LocalDateTime now) {
         List<NotificationDraft> drafts = new ArrayList<>();
         for (Todo todo : todoRepository.findAllForReminderByIdIn(todoIds)) {
             // 예약 이후 변경(완료·삭제·시각 변경)이 반영되지 않은 항목일 수 있으므로 DB 기준으로 다시 확인
@@ -74,9 +45,7 @@ public class TodoReminderService {
             }
             drafts.add(new NotificationDraft(todo.getAssignee(), NotificationType.REMINDER, todo.getId(), null, content(todo)));
         }
-        // 같은 분에 도래한 리마인드를 INSERT 1회로 저장
-        notificationService.sendEach(drafts);
-        return drafts.size();
+        return drafts;
     }
 
     // 서버 시작 시 예약 목록 재적재 (Redis 데이터 유실 대비), 리마인드 시각이 아직 오지 않은 투두만

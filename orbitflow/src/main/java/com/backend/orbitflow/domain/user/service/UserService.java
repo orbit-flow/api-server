@@ -14,7 +14,6 @@ public interface UserService {
     User getByUuid(String uuid);
     List<User> getAllByUuids(Collection<String> uuids);
     User getByUuidIncludingBanned(String uuid);
-    User getByEmail(String email);
     Optional<User> findByEmail(String email);
     Optional<User> findById(Long id);
     User resetPassword(String uuid, String encodedPassword);
@@ -23,7 +22,7 @@ public interface UserService {
     User registerSocialUser(String email, String name, String profileImage);
     User getViewableUser(User target, boolean blocked);
     User updateProfile(String uuid, String name, String introduce, boolean isPrivate);
-    User updateProfileImage(User user, String profileImage);
+    User replaceProfileImage(String uuid, String profileImage);
     User updateEmail(String uuid, String email);
     User updatePassword(String uuid, String password);
     User lockUser(Long userId);

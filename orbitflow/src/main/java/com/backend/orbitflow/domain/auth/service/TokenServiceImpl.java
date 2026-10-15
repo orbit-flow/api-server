@@ -12,6 +12,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.ResponseCookie;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.Duration;
 
@@ -70,6 +72,20 @@ public class TokenServiceImpl implements TokenService{
     @Override
     public void deleteRefreshToken(String uuid) {
         redisUtil.deleteValues(JwtProvider.REFRESH_HEADER + uuid);
+    }
+
+    @Override
+    public void deleteRefreshTokenAfterCommit(String uuid) {
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            deleteRefreshToken(uuid);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                deleteRefreshToken(uuid);
+            }
+        });
     }
 
     @Override

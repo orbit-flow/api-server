@@ -3,12 +3,12 @@ package com.backend.orbitflow.domain.auth.controller;
 import com.backend.orbitflow.domain.auth.dto.request.DormantReleaseRequest;
 import com.backend.orbitflow.domain.auth.dto.request.PasswordResetMailRequest;
 import com.backend.orbitflow.domain.auth.dto.request.PasswordResetRequest;
-import com.backend.orbitflow.domain.auth.dto.request.EmailVarifyRequest;
+import com.backend.orbitflow.domain.auth.dto.request.EmailVerifyRequest;
 import com.backend.orbitflow.domain.auth.dto.request.LoginRequest;
 import com.backend.orbitflow.domain.auth.dto.request.EmailCodeRequest;
 import com.backend.orbitflow.domain.auth.dto.response.AuthSuccessCode;
 import com.backend.orbitflow.domain.auth.dto.response.EmailCodeResponse;
-import com.backend.orbitflow.domain.auth.dto.response.EmailVarifyResponse;
+import com.backend.orbitflow.domain.auth.dto.response.EmailVerifyResponse;
 import com.backend.orbitflow.domain.auth.dto.response.TokenResponse;
 import com.backend.orbitflow.domain.auth.facade.AuthFacade;
 import com.backend.orbitflow.global.common.dto.response.CommonResponse;
@@ -158,15 +158,15 @@ public class AuthController {
                 ));
     }
 
-    @PostMapping("/email/varify")
-    public ResponseEntity<CommonResponse<EmailVarifyResponse>> varifyEmail(
-            @Valid @RequestBody EmailVarifyRequest request
+    @PostMapping("/email/verify")
+    public ResponseEntity<CommonResponse<EmailVerifyResponse>> verifyEmail(
+            @Valid @RequestBody EmailVerifyRequest request
     ) {
         return ResponseEntity
                 .status(HttpStatus.OK)
                 .body(CommonResponse.success(
-                        AuthSuccessCode.EMAIL_VARIFY_SUCCESS,
-                        authFacade.varifyEmail(request)
+                        AuthSuccessCode.EMAIL_VERIFY_SUCCESS,
+                        authFacade.verifyEmail(request)
                 ));
     }
 }

@@ -19,7 +19,7 @@ public enum AuthSuccessCode implements SuccessCode {
     OAUTH_LOGIN_SUCCESS(HttpStatus.OK, "소셜 로그인 되었습니다."),
     REISSUE_SUCCESS(HttpStatus.OK, "토큰이 재발급 되었습니다."),
     EMAIL_CODE_SEND(HttpStatus.OK, "인증 코드가 발급되었습니다."),
-    EMAIL_VARIFY_SUCCESS(HttpStatus.OK, "이메일 인증이 완료되었습니다.");
+    EMAIL_VERIFY_SUCCESS(HttpStatus.OK, "이메일 인증이 완료되었습니다.");
 
     private final HttpStatus httpStatus;
     private final String message;

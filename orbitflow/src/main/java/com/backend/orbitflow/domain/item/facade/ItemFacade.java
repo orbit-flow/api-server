@@ -50,9 +50,7 @@ public class ItemFacade {
     @Transactional
     public ItemResponse updateItem(Long itemId, ItemRequest request, MultipartFile image) {
         Item item = itemService.getItem(itemId);
-        if (item.getType() != request.type()) {
-            avatarService.unequipAllByItem(item);
-        }
+        avatarService.unequipAllOnTypeChange(item, request.type());
         return itemService.updateItem(itemId, request.name(), request.type(), request.price(), image);
     }
 

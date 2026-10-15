@@ -68,18 +68,12 @@ public class AuthServiceImpl implements AuthService{
     // DB 작업이 없으므로 트랜잭션 밖에서 호출되면 트랜잭션을 열지 않음 (bcrypt 동안 DB 커넥션 점유 방지)
     @Transactional(propagation = Propagation.SUPPORTS)
     public void authenticate(User user, String password) {
-        // 비밀번호가 없는 소셜 전용 계정도 더미 해시와 비교해 응답 시간 차이를 줄임
-        String encoded = user.getPassword() != null ? user.getPassword() : dummyPasswordHash;
-        if (!passwordEncoder.matches(password, encoded) || user.getPassword() == null) {
+        // 없는 계정(null)·비밀번호가 없는 소셜 전용 계정도 더미 해시와 비교해 응답 시간 차이를 줄이고 동일한 LOGIN_FAIL 로 응답 (계정 존재 여부 비노출)
+        boolean hasPassword = user != null && user.getPassword() != null;
+        boolean matches = passwordEncoder.matches(password, hasPassword ? user.getPassword() : dummyPasswordHash);
+        if (!hasPassword || !matches) {
             throw new CommonException(AuthErrorCode.LOGIN_FAIL);
         }
-    }
-
-    // 존재하지 않는 계정 : 더미 해시와 비교한 뒤 비밀번호 불일치와 동일한 실패 반환
-    @Transactional(propagation = Propagation.SUPPORTS)
-    public void failUnknownAccount(String password) {
-        passwordEncoder.matches(password, dummyPasswordHash);
-        throw new CommonException(AuthErrorCode.LOGIN_FAIL);
     }
 
     public long getCodeExpireMillis() {
@@ -102,7 +96,7 @@ public class AuthServiceImpl implements AuthService{
     }
 
     @Override
-    public String varifyEmail(String email, String code) {
+    public String verifyEmail(String email, String code) {
         consumeCode(email, code);
 
         // 가입·이메일 변경 시 제출할 인증 토큰 (OTP와 별개의 난수)
@@ -119,33 +113,33 @@ public class AuthServiceImpl implements AuthService{
     // 가입·이메일 변경 : 인증 토큰 검증 후 1회용으로 폐기
     public void consumeVerifyToken(String email, String token) {
         String saved = redisUtil.getValues(VERIFIED_KEY + email, String.class).orElseThrow(
-                () -> new CommonException(UserErrorCode.UN_VARIFIED_EMAIL)
+                () -> new CommonException(UserErrorCode.UN_VERIFIED_EMAIL)
         );
         if (token == null || !isEqual(saved, token) || !redisUtil.deleteValues(VERIFIED_KEY + email)) {
-            throw new CommonException(UserErrorCode.UN_VARIFIED_EMAIL);
+            throw new CommonException(UserErrorCode.UN_VERIFIED_EMAIL);
         }
     }
 
     // OTP 검증 : 비교 전에 실패 횟수를 먼저 올려 동시 요청으로 5회를 넘겨 시도하는 것을 방지
     private void consumeCode(String email, String code) {
         String saved = redisUtil.getValues(CODE_KEY + email, String.class).orElseThrow(
-                () -> new CommonException(AuthErrorCode.NO_VARIFY_CODE)
+                () -> new CommonException(AuthErrorCode.NO_VERIFY_CODE)
         );
         long fails = redisUtil.increment(FAIL_KEY + email, CODE_TTL);
         if (fails > MAX_VERIFY_FAILS) {
             discardCode(email);
-            throw new CommonException(AuthErrorCode.EMAIL_VARIFY_TOO_MANY_FAILS);
+            throw new CommonException(AuthErrorCode.EMAIL_VERIFY_TOO_MANY_FAILS);
         }
         if (code == null || !isEqual(saved, code)) {
             if (fails >= MAX_VERIFY_FAILS) {
                 discardCode(email);
-                throw new CommonException(AuthErrorCode.EMAIL_VARIFY_TOO_MANY_FAILS);
+                throw new CommonException(AuthErrorCode.EMAIL_VERIFY_TOO_MANY_FAILS);
             }
-            throw new CommonException(AuthErrorCode.EMAIL_VARIFY_FAIL);
+            throw new CommonException(AuthErrorCode.EMAIL_VERIFY_FAIL);
         }
         // 동시에 맞는 코드를 제출해도 한 번만 성공
         if (!redisUtil.deleteValues(CODE_KEY + email)) {
-            throw new CommonException(AuthErrorCode.NO_VARIFY_CODE);
+            throw new CommonException(AuthErrorCode.NO_VERIFY_CODE);
         }
         redisUtil.deleteValues(FAIL_KEY + email);
     }

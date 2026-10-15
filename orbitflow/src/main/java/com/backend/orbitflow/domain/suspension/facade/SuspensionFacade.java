@@ -17,8 +17,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionSynchronization;
-import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 @Component
 @RequiredArgsConstructor
@@ -39,14 +37,8 @@ public class SuspensionFacade {
         if (request.reportId() != null) {
             reportService.sanction(request.reportId(), target);
         }
-        // 재발급 차단 : DB 반영이 확정된 뒤에만 수행 (access token 차단 표시보다 먼저)
-        String targetUuid = target.getUuid();
-        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
-            @Override
-            public void afterCommit() {
-                tokenService.deleteRefreshToken(targetUuid);
-            }
-        });
+        // 재발급 차단 : DB 반영이 확정된 뒤에만 수행 (access token 차단 표시보다 먼저 등록)
+        tokenService.deleteRefreshTokenAfterCommit(target.getUuid());
         return suspensionService.suspend(admin, target, request.reason(), request.expiresAt());
     }
 

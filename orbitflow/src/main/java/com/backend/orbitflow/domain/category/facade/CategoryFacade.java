@@ -30,10 +30,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.backend.orbitflow.global.common.dto.response.PageResponse;
 
-import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 
 @Component
@@ -111,7 +109,7 @@ public class CategoryFacade {
     public CategoryResponse updateCategory(AuthUser authUser, Long categoryId, CategoryRequest request) {
         User me = userService.getActiveByUuid(authUser.getUuid());
         Category category = categoryService.getActiveCategory(categoryId);
-        categoryAuthorityService.checkEdit(category, me, findTeamMask(category, me));
+        categoryAuthorityService.checkEdit(category, me, teamMask(category, me));
         Visibility before = category.getVisibility();
         CategoryResponse response = categoryService.updateCategory(category, request.name(), request.color(), request.visibility());
         // 요청의 visibility가 null이면 기본값으로 저장되므로 저장된 값(응답)으로 비교
@@ -130,7 +128,7 @@ public class CategoryFacade {
     public void deleteCategory(AuthUser authUser, Long categoryId, Long moveToCategoryId) {
         User me = userService.getActiveByUuid(authUser.getUuid());
         Category category = categoryService.getActiveCategory(categoryId);
-        categoryAuthorityService.checkEdit(category, me, findTeamMask(category, me));
+        categoryAuthorityService.checkEdit(category, me, teamMask(category, me));
         Category moveTo = categoryService.getMoveTarget(category, moveToCategoryId);
         todoTransferService.moveAllToCategory(category, moveTo);
         categoryService.deleteCategory(category);
@@ -141,7 +139,7 @@ public class CategoryFacade {
         User me = userService.getActiveByUuid(authUser.getUuid());
         Category category = categoryService.getActiveCategory(categoryId);
         categoryService.requireTeamCategory(category);
-        categoryAuthorityService.checkEdit(category, me, findTeamMask(category, me));
+        categoryAuthorityService.checkEdit(category, me, teamMask(category, me));
         return PageResponse.from(categoryService.getPermissions(category, page, size));
     }
 
@@ -151,7 +149,7 @@ public class CategoryFacade {
         List<User> members = userService.getAllByUuids(request.memberUuids());
         Category category = categoryService.getActiveCategory(categoryId);
         categoryService.requireTeamCategory(category);
-        categoryAuthorityService.checkEdit(category, me, findTeamMask(category, me));
+        categoryAuthorityService.checkEdit(category, me, teamMask(category, me));
         Team team = category.getTeam();
         Set<Long> roleIds = new HashSet<>(request.roleIds());
         List<TeamRole> roles = teamRoleService.findRoles(team, roleIds);
@@ -166,47 +164,13 @@ public class CategoryFacade {
                 .orElse(null);
     }
 
-    // ---- 다른 Facade(TodoFacade·PostFacade)와 공유하는 조회 전용 헬퍼 : 호출 측 트랜잭션에 참여 ----
-
-    // 팀 카테고리에서의 권한 mask (팀 구성원이 아니면 null, 개인 카테고리는 팀 권한을 보지 않으므로 조회하지 않고 null)
-    @Transactional(readOnly = true)
-    public Integer findTeamMask(Category category, User user) {
+    // 팀 카테고리일 때만 조회 (개인 카테고리는 팀 권한을 보지 않으므로 null)
+    private Integer teamMask(Category category, User user) {
         return category.isTeamCategory() ? teamMask(category.getTeam(), user) : null;
     }
 
-    // 개인 카테고리이면 false
-    @Transactional(readOnly = true)
-    public boolean isTeamMember(Category category, User user) {
-        return category.isTeamCategory() && teamAuthorityService.findMember(category.getTeam(), user).isPresent();
-    }
-
-    // 알림을 켠 followee의 팔로워 중 카테고리를 볼 수 있는 사용자 (id → uuid, 팔로워 FOLLOWER_CHUNK명 단위 묶음)
-    @Transactional(readOnly = true)
-    public List<Map<Long, String>> findNotifiableViewers(Category category, User followee) {
-        List<Map<Long, String>> chunks = new ArrayList<>();
-        if (!categoryAuthorityService.hasNotifiableFollowers(category)) {
-            return chunks;
-        }
-        Set<Long> viewerIds = categoryAuthorityService.findNotifiableViewerIds(category);
-        long afterId = 0L;
-        while (true) {
-            Map<Long, String> followers = followService.findNotifiableFollowers(followee, afterId, CategoryAuthorityService.FOLLOWER_CHUNK);
-            for (Long followerId : followers.keySet()) {
-                afterId = followerId;
-            }
-            Map<Long, String> receivers = categoryAuthorityService.filterNotifiableViewers(followers, viewerIds);
-            if (!receivers.isEmpty()) {
-                chunks.add(receivers);
-            }
-            if (followers.size() < CategoryAuthorityService.FOLLOWER_CHUNK) {
-                return chunks;
-            }
-        }
-    }
-
     // 카테고리 열람 가능 여부 : 소유 도메인(팀·차단·팔로우)의 정보를 조회해 정책에 전달
-    @Transactional(readOnly = true)
-    public boolean canView(Category category, User viewer) {
+    private boolean canView(Category category, User viewer) {
         if (category.isTeamCategory()) {
             Team team = category.getTeam();
             TeamMember member = teamAuthorityService.findMember(team, viewer).orElse(null);

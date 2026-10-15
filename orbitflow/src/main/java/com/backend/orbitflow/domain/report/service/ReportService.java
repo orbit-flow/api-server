@@ -14,9 +14,9 @@ import com.backend.orbitflow.domain.report.dto.response.ReportListResponse;
 
 public interface ReportService {
 
-    // 대상 조회는 다른 도메인 서비스가 필요해 ReportFacade가 조회해 전달 (viewablePost : 열람 가능한 게시글, blocked : 대상 작성자·사용자와의 차단 관계)
+    // 대상 조회는 다른 도메인 서비스가 필요해 ReportFacade가 조회해 전달 (viewablePost : 열람 가능한 게시글, 차단 관계 : 신고자와 댓글 작성자·대상 사용자)
     UserReport createReport(User reporter, ReportContentType contentType, Long targetId, User targetUser,
-                            Optional<Post> viewablePost, Optional<Comment> targetComment, boolean blocked, String reason);
+                            Optional<Post> viewablePost, Optional<Comment> targetComment, boolean commentAuthorBlocked, boolean targetUserBlocked, String reason);
     Page<ReportListResponse> getMyReports(User reporter, int page, int size);
 
     // 관리자

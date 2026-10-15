@@ -22,7 +22,7 @@ public interface RoutineService {
     void deleteRoutine(Todo todo, RoutineScope scope);
     Routine getRoutine(Long routineId);
     TodoResponse createOccurrence(Routine routine, LocalDateTime startDate);
-    List<DashboardTodoResponse> getPreviews(User user, LocalDateTime from, LocalDateTime to);
     List<DashboardTodoResponse> getDashboardPreviews(User me, LocalDate date);
-    void generateAll();
+    List<Long> findActiveRoutineIds();
+    int generateOccurrences(List<Long> routineIds);
 }

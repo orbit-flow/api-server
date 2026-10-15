@@ -86,8 +86,7 @@ public class TeamMemberServiceImpl implements TeamMemberService {
         }
     }
 
-    // 추방 대상 조회 (본인·소유자는 추방 불가)
-    // 소유자가 아니면 자신이 보유하지 않은 권한을 가진 구성원은 추방할 수 없으므로, 그 판정(권한 상승 방지)은 호출 측에서 이어서 진행
+    // 추방 대상 조회 (본인·소유자는 추방 불가), 이어서 checkKickable 호출
     public TeamMember getKickTarget(Team team, User actor, User target) {
         if (actor.getId().equals(target.getId())) {
             throw new CommonException(TeamErrorCode.SELF_KICK);
@@ -96,6 +95,13 @@ public class TeamMemberServiceImpl implements TeamMemberService {
             throw new CommonException(TeamErrorCode.CANNOT_KICK_OWNER);
         }
         return getTargetMember(team, target);
+    }
+
+    // 권한 상승 방지 : 자신이 보유하지 않은 권한을 가진 구성원은 추방할 수 없음 (소유자는 전체 권한이므로 항상 통과)
+    public void checkKickable(int actorMask, int targetMask) {
+        if (!TeamPermission.contains(actorMask, targetMask)) {
+            throw new CommonException(TeamErrorCode.CANNOT_GRANT_PERMISSION);
+        }
     }
 
     // 담당하던 미완료 팀 투두는 호출 측이 구성원 삭제 전에 상속시킴 (카테고리를 볼 수 있는 구성원 중 권한이 가장 낮은 구성원, TodoTransferService)

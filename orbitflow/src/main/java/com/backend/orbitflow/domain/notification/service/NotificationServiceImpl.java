@@ -46,12 +46,13 @@ public class NotificationServiceImpl implements NotificationService {
     private final JdbcBulkInserter jdbcBulkInserter;
     private final NotificationEmitterRepository emitterRepository;
 
-    // 본인 활동, 이미 발송한 토글성 활동에는 알림을 생성하지 않음 (차단 관계 수신자는 호출 측 NotificationEventListener가 미리 제외)
+    // 본인 활동, 행위자와 차단 관계인 수신자, 이미 발송한 토글성 활동에는 알림을 생성하지 않음
     // 수신자 id·uuid만으로 같은 알림 일괄 발송 (팔로워 등 대량 수신자를 엔티티로 읽지 않도록)
     // repeatable이면 토글성 활동 중복 제거를 하지 않음 (팔로우 요청 수락 등 일회성 결과)
-    public void sendAll(Map<Long, String> receiverUuids, NotificationType type, User actor, Long targetId, String targetUuid, String content, boolean repeatable) {
+    public void sendAll(Map<Long, String> receiverUuids, Set<Long> blockedReceiverIds, NotificationType type, User actor, Long targetId, String targetUuid, String content, boolean repeatable) {
         List<Long> targets = receiverUuids.keySet().stream()
                 .filter(receiverId -> actor == null || !actor.getId().equals(receiverId))
+                .filter(receiverId -> !blockedReceiverIds.contains(receiverId))
                 .toList();
         if (targets.isEmpty()) {
             return;

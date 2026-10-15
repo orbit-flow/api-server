@@ -21,10 +21,9 @@ public interface CategoryAuthorityService {
     // 팀 카테고리 관리(MANAGE_CATEGORIES) 권한 확인
     void checkManage(Integer teamMask);
 
-    // 알림 대상 조회용 : 팔로워 조회는 호출 측(CategoryFacade.findNotifiableViewers)이 FOLLOWER_CHUNK 단위로 반복하며 묶음마다 filterNotifiableViewers 적용
+    // 알림 대상 조회용 : 팔로워 조회는 호출 측 Facade가 FOLLOWER_CHUNK 단위로 반복하며 묶음마다 filterNotifiableViewers 적용
     int FOLLOWER_CHUNK = 500;
 
-    Set<Long> findViewerUserIds(Category teamCategory);
     // 팔로워에게 알림을 보낼 수 있는 카테고리인지 (개인 PRIVATE은 팔로워도 볼 수 없음)
     boolean hasNotifiableFollowers(Category category);
     // 팔로워 중 카테고리를 볼 수 있는 사용자 id (조회 권한 쿼리 1회), null이면 팔로워 전원이 조회 가능

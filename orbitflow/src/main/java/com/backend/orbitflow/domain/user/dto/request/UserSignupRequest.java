@@ -23,7 +23,7 @@ public record UserSignupRequest(
     String name,
 
     @NotBlank(message = "이메일 인증 토큰을 입력해 주세요.")
-    String emailVarifyToken
+    String emailVerifyToken
 ) {
     public UserSignupRequest {
         email = email == null ? null : email.trim().toLowerCase();

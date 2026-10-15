@@ -1,13 +1,13 @@
 package com.backend.orbitflow.domain.auth.facade;
 
-import com.backend.orbitflow.domain.auth.dto.request.EmailVarifyRequest;
+import com.backend.orbitflow.domain.auth.dto.request.EmailVerifyRequest;
 import com.backend.orbitflow.domain.auth.dto.request.DormantReleaseRequest;
 import com.backend.orbitflow.domain.auth.dto.request.LoginRequest;
 import com.backend.orbitflow.domain.auth.error.AuthErrorCode;
 import com.backend.orbitflow.global.common.error.exception.CommonException;
 import com.backend.orbitflow.domain.auth.dto.request.EmailCodeRequest;
 import com.backend.orbitflow.domain.auth.dto.response.EmailCodeResponse;
-import com.backend.orbitflow.domain.auth.dto.response.EmailVarifyResponse;
+import com.backend.orbitflow.domain.auth.dto.response.EmailVerifyResponse;
 import com.backend.orbitflow.domain.auth.dto.response.TokenResponse;
 import com.backend.orbitflow.domain.auth.service.AuthService;
 import com.backend.orbitflow.domain.auth.service.TokenService;
@@ -23,15 +23,12 @@ import com.backend.orbitflow.domain.auth.service.PasswordResetService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.transaction.support.TransactionTemplate;
 import com.backend.orbitflow.domain.auth.dto.response.LoginResult;
 import com.backend.orbitflow.domain.suspension.dto.response.SuspendedAccountResponse;
 import com.backend.orbitflow.domain.suspension.error.SuspensionErrorCode;
 import com.backend.orbitflow.domain.suspension.service.SuspensionNoticeTicketService;
 import java.time.LocalDateTime;
-import java.util.Objects;
 import java.util.Optional;
 
 @Component
@@ -45,30 +42,18 @@ public class AuthFacade{
     private final SuspensionService suspensionService;
     private final PasswordResetService passwordResetService;
     private final SuspensionNoticeTicketService suspensionNoticeTicketService;
-    private final PlatformTransactionManager transactionManager;
 
     @Value("${app.front-url}")
     private String frontUrl;
 
     // 탈퇴 유예 계정은 복구, 휴면 계정은 이메일 인증 안내와 함께 거부
     // 정지 계정은 로그인은 성공하되 토큰 없이 정지 안내 정보만 반환 (정지 시 refresh token은 이미 폐기됨)
-    // 비밀번호 검증(bcrypt)은 DB 커넥션을 잡지 않도록 트랜잭션 밖에서 먼저 수행하고, 상태 변경만 트랜잭션으로 처리
+    // 비밀번호 검증(없는 계정·불일치는 같은 LOGIN_FAIL, 판단은 AuthService) 이후 복구(탈퇴 유예)·마지막 로그인 갱신은
+    // 조회한 엔티티의 변경 감지에 의존하므로 한 트랜잭션으로 묶음, 탈퇴 복구·휴면 여부 판단은 UserService 가 수행
+    @Transactional
     public LoginResult login(LoginRequest request) {
-        // 없는 계정과 비밀번호 불일치는 동일한 LOGIN_FAIL로 응답 (계정 존재 여부 비노출)
-        User found = userService.findByEmail(request.email()).orElse(null);
-        if (found == null) {
-            authService.failUnknownAccount(request.password());
-        }
-        authService.authenticate(found, request.password());
-        return new TransactionTemplate(transactionManager).execute(status -> completeLogin(request.email(), found));
-    }
-
-    // 검증 이후 계정이 바뀌었으면(이메일·비밀번호 변경) 동일한 LOGIN_FAIL로 처리
-    private LoginResult completeLogin(String email, User verified) {
-        User user = userService.findByEmail(email)
-                .filter(current -> current.getId().equals(verified.getId())
-                        && Objects.equals(current.getPassword(), verified.getPassword()))
-                .orElseThrow(() -> new CommonException(AuthErrorCode.LOGIN_FAIL));
+        User user = userService.findByEmail(request.email()).orElse(null);
+        authService.authenticate(user, request.password());
         userService.restoreIfWithdrawn(user);
         Optional<SuspendedAccountResponse> suspension = suspensionService.findActiveNotice(user);
         if (suspension.isPresent()) {
@@ -137,7 +122,7 @@ public class AuthFacade{
         authService.verifyCode(request.email(), request.code());
         User user = userService.findByEmail(request.email())
                 .filter(found -> found.getDeletedAt() == null && found.getStatus() == UserStatus.SLEEP)
-                .orElseThrow(() -> new CommonException(AuthErrorCode.EMAIL_VARIFY_FAIL));
+                .orElseThrow(() -> new CommonException(AuthErrorCode.EMAIL_VERIFY_FAIL));
         userService.releaseDormant(user);
     }
 
@@ -147,10 +132,10 @@ public class AuthFacade{
         return EmailCodeResponse.of(authService.getCodeExpireMillis());
     }
 
-    public EmailVarifyResponse varifyEmail(EmailVarifyRequest request) {
-        return EmailVarifyResponse.of(
+    public EmailVerifyResponse verifyEmail(EmailVerifyRequest request) {
+        return EmailVerifyResponse.of(
                 true,
-                authService.varifyEmail(request.email(), request.code())
+                authService.verifyEmail(request.email(), request.code())
         );
     }
 }

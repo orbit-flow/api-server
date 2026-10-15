@@ -31,26 +31,19 @@ public class NotificationEventListener {
         if (request.receivers().isEmpty()) {
             return;
         }
-        Map<Long, String> receivers = excludeBlocked(request);
-        notificationService.sendAll(receivers, request.type(), request.actor(),
+        notificationService.sendAll(request.receivers(), findBlockedReceiverIds(request), request.type(), request.actor(),
                 request.targetId(), request.targetUuid(), request.content(), request.repeatable());
     }
 
-    // 행위자와 차단 관계(어느 방향이든)인 수신자 제외, 수신자 묶음 단위로 한 번에 확인 (수신자마다 조회하지 않음)
+    // 행위자와 차단 관계(어느 방향이든)인 수신자 id 조회만 담당 (제외 판단은 NotificationService), 수신자 묶음 단위로 한 번에 확인
     // 본인 활동은 NotificationService에서 제외하므로 조회 대상에서도 뺌
-    private Map<Long, String> excludeBlocked(NotificationRequest request) {
+    private Set<Long> findBlockedReceiverIds(NotificationRequest request) {
         if (request.actor() == null) {
-            return request.receivers();
+            return Set.of();
         }
         List<Long> targets = request.receivers().keySet().stream()
                 .filter(receiverId -> !request.actor().getId().equals(receiverId))
                 .toList();
-        if (targets.isEmpty()) {
-            return request.receivers();
-        }
-        Set<Long> blocked = blockService.findBlockedUserIdsAmong(request.actor(), targets);
-        Map<Long, String> receivers = new LinkedHashMap<>(request.receivers());
-        receivers.keySet().removeAll(blocked);
-        return receivers;
+        return targets.isEmpty() ? Set.of() : blockService.findBlockedUserIdsAmong(request.actor(), targets);
     }
 }

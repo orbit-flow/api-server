@@ -15,12 +15,13 @@ import java.util.Set;
 
 public interface PostService {
 
-    // 열람 권한 확인은 PostFacade.getViewablePost (차단·카테고리 판정에 다른 도메인 서비스가 필요해 파사드에서 조율)
+    // 열람 권한 확인은 호출하는 파사드가 차단·카테고리 판정 결과를 조회해 checkNotBlocked -> checkCategoryViewable 순으로 전달
     Post getActivePost(Long postId);
     Optional<Post> findById(Long postId);
     Todo requireTodo(Optional<Todo> found, boolean includeDeleted);
-    void checkNotBlocked(boolean blocked);
-    void checkCategoryViewable(boolean viewable);
+    void checkNotBlocked(Post post, User viewer, boolean blocked);
+    void checkCategoryViewable(Post post, User viewer, boolean canView);
+    void checkAuthor(Post post, User actor);
     PostResponse createPost(User actor, Todo todo, Category category, boolean teamMember, String content, List<MultipartFile> images);
     PostResponse getPost(Post post, long likeCount, long commentCount, boolean liked);
     Page<Post> findTodoPosts(User viewer, Todo todo, boolean canViewCategory, int page, int size);
